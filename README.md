@@ -1,4 +1,3 @@
-
 # Citizen Radio Project
 
 ## Overview
@@ -8,10 +7,10 @@ Citizen Radio is an automated radio station and podcast generator that creates i
 - **24/7 YouTube Live Streaming**: Automatically streams radio content with synchronized cover art rotation
 - **Dynamic Content Scheduling**: Intelligently schedules music, DJ segments, ads, and podcasts in customizable patterns
 - **AI-Powered Script Generation**: Uses OpenAI's GPT-4 to create realistic radio content including:
-  - DJ talk segments with personality and game-world references
-  - In-universe advertisements for fictional products
-  - Station IDs and transitions
-  - Full-length podcast episodes with hosts and guests discussing topics from the Star Citizen universe
+    - DJ talk segments with personality and game-world references
+    - In-universe advertisements for fictional products
+    - Station IDs and transitions
+    - Full-length podcast episodes with hosts and guests discussing topics from the Star Citizen universe
 - **Smart Track Selection**: Prevents repetition with weighted history tracking for all content types
 - **Text-to-Speech Synthesis**: Converts AI-generated scripts to audio using Google Cloud's Text-to-Speech API
 - **Voice Assignment System**: Assigns appropriate voices to different characters based on gender, role, and persistence across episodes
@@ -21,17 +20,17 @@ Citizen Radio is an automated radio station and podcast generator that creates i
 - **Content Generation**: Creates various types of radio content on-demand using AI
 - **Track Management**: Intelligent selection system that avoids repetition
 - **Podcast Creation**:
-  - Script generation with proper dialogue structure
-  - Character voice assignment and persistence
-  - Audio synthesis and processing
+    - Script generation with proper dialogue structure
+    - Character voice assignment and persistence
+    - Audio synthesis and processing
 - **Stream Visualization**: Rotates station artwork on the live stream
 
 ## How It Works
 1. **Station Configuration**: Defines station identity, DJ personality, scheduling patterns, and voice profiles
 2. **Content Scheduling**: Follows configured patterns to decide what plays next (music, ads, DJ segments, etc.)
 3. **Content Generation**:
-  - For talk segments: AI generates scripts which are converted to speech
-  - For podcasts: Topics and participants are processed, scripts generated, and multi-voice conversations synthesized
+- For talk segments: AI generates scripts which are converted to speech
+- For podcasts: Topics and participants are processed, scripts generated, and multi-voice conversations synthesized
 4. **Audio Processing**: All content is processed with proper audio normalization and transitions
 5. **Streaming**: Content is seamlessly piped into the YouTube live stream with synchronized visuals
 
@@ -52,11 +51,11 @@ Citizen Radio is an automated radio station and podcast generator that creates i
 
 ## Project Structure
 - Modular design with separate components for:
-  - Stream management and broadcasting
-  - Content scheduling and playback
-  - Track selection and history tracking
-  - Podcast generation and processing
-  - AI content creation
+    - Stream management and broadcasting
+    - Content scheduling and playback
+    - Track selection and history tracking
+    - Podcast generation and processing
+    - AI content creation
 
 ## Setup Instructions
 
@@ -72,46 +71,46 @@ Citizen Radio is an automated radio station and podcast generator that creates i
    ```
 
 3. **Environment Configuration**
-  - Copy the example environment file:
-    ```
-    cp .env.example .env
-    ```
-  - Edit the `.env` file and add your API keys:
-    ```
-    OPENAI_API_KEY=your_openai_api_key_here
-    YOUTUBE_STREAM_KEY=your_youtube_stream_key_here
-    ```
+- Copy the example environment file:
+  ```
+  cp .env.example .env
+  ```
+- Edit the `.env` file and add your API keys:
+  ```
+  OPENAI_API_KEY=your_openai_api_key_here
+  YOUTUBE_STREAM_KEY=your_youtube_stream_key_here
+  ```
 
 4. **Station Configuration**
-  - Edit `station.json` to customize your radio station:
-    ```json
-    {
-      "stationName": "Your Station Name",
-      "djName": "Your DJ Name",
-      "imageInterval": 480,
-      "uptimeHours": null,
-      "uptimeMode": "track",
-      "vibe": "Description of your station's vibe and personality",
-      "schedule": {
-        "defaultPattern": ["intro", "music", "dj", "music", "ad", "music"]
-      }
+- Edit `station.json` to customize your radio station:
+  ```json
+  {
+    "stationName": "Your Station Name",
+    "djName": "Your DJ Name",
+    "imageInterval": 480,
+    "uptimeHours": null,
+    "uptimeMode": "track",
+    "vibe": "Description of your station's vibe and personality",
+    "schedule": {
+      "defaultPattern": ["intro", "music", "dj", "music", "ad", "music"]
     }
-    ```
-  - See the Configuration section below for detailed options
+  }
+  ```
+- See the Configuration section below for detailed options
 
 5. **Add Content**
-  - Place MP3 files in the appropriate `ready/` directories
-  - Add image files to `ready/image/` for stream visualization
+- Place MP3 files in the appropriate `ready/` directories
+- Add image files to `ready/image/` for stream visualization
 
 6. **Start the Station**
-  - Basic start:
-    ```
-    npm start
-    ```
-  - With custom uptime:
-    ```
-    npm start -- --uptime 4 --uptime-mode track
-    ```
+- Basic start:
+  ```
+  npm start
+  ```
+- With custom uptime:
+  ```
+  npm start -- --uptime 4 --uptime-mode track
+  ```
 
 ## Configuration Options
 
@@ -156,6 +155,62 @@ The following command line arguments can override settings in `station.json`:
 
 - `--uptime <hours>`: Set the station's running time in hours (e.g., `--uptime 4` for 4 hours)
 - `--uptime-mode <mode>`: Set the uptime mode:
-  - `track`: Station will stop after the specified number of hours
-  - `cycle`: Station will complete its current content cycle before stopping
+    - `track`: Station will stop after the specified number of hours
+    - `cycle`: Station will complete its current content cycle before stopping
 
+## Content Generation
+
+### Adding Text Prompts
+
+The system automatically monitors the `prompts/` directories for new text files to process:
+
+1. **Create a Text Prompt File**:
+    - Create a `.txt` file in the appropriate prompt folder:
+        - `prompts/dj/` - For DJ talk segments
+        - `prompts/ads/` - For advertisements
+        - `prompts/intros/` - For station IDs and transitions
+        - `prompts/podcast/` - For podcast episodes
+        - `prompts/images/` - For generating station artwork
+
+2. **Format Your Prompt**:
+    - For simple content (dj, ads, intros): Write a brief description or outline
+    - For podcasts: Include topic, hosts, guests, and any specific direction
+
+3. **Prompt Processing**:
+    - The system will automatically detect new text files
+    - AI will expand your basic prompt into fully-formed content
+    - Text will be converted to speech using the appropriate voice profile
+    - Resulting audio will be placed in the corresponding `ready/` directory
+
+### Podcast Generation
+
+Podcasts use a special format to define participants and their characteristics:
+
+1. **Create a Podcast Prompt**:
+   ```
+   Topic: The future of quantum travel technology
+   
+   Hosts:
+   - Markus Reynolds: Male, senior science correspondent, enthusiastic about new tech
+   - Leela Chen: Female, engineer, skeptical but knowledgeable
+   
+   Guests:
+   - Dr. Xander Smith: Male, quantum physicist, developer of the new QD-9000 drive
+   - Captain Aria Jackson: Female, test pilot, first to use the experimental drive
+   
+   Notes:
+   The podcast should discuss recent breakthroughs in quantum drive technology,
+   with Dr. Smith explaining the technical details while Captain Jackson shares
+   her experiences testing the new system.
+   ```
+
+2. **Voice Assignment**:
+    - The system will automatically assign appropriate TTS voices to each character
+    - Voices are selected based on the specified gender
+    - Once assigned, voices remain consistent for characters across episodes
+
+3. **Configuration Options**:
+    - For more control, create a `.cfg.json` file with the same base name as your prompt
+    - This allows customizing episode length, style, and other parameters
+
+Citizen Radio brings the Star Citizen universe to life through an immersive radio experience, combining AI-generated content with music to create a persistent broadcast that enhances the game's atmosphere and lore.
