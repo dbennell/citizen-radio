@@ -1,0 +1,26 @@
+{
+  "Dex Rylan": {
+    "voiceName": "en-US-Chirp3-HD-Sadaltager",
+    "speakerId": "ce0619"
+  },
+  "Cheese maker, Audrey kemp": {
+    "voiceName": "en-US-Chirp3-HD-Aoede",
+    "speakerId": "d73f86"
+  },
+  "Bob, cheese lover": {
+    "voiceName": "en-AU-Chirp3-HD-Fenrir",
+    "speakerId": "bf375a"
+  },
+  "Tyler Hale": {
+    "voiceName": "en-US-Chirp3-HD-Fenrir",
+    "speakerId": "be747f"
+  },
+  "Bro Logan": {
+    "voiceName": "en-US-Chirp3-HD-Sadachbia",
+    "speakerId": "80dee5"
+  },
+  "Sam Cadillac": {
+    "voiceName": "en-US-Chirp3-HD-Zubenelgenubi",
+    "speakerId": "2916ee"
+  }
+}

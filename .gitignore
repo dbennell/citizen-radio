@@ -1,0 +1,7 @@
+/ready/
+/prompts/
+/not-ready/
+/temp/
+*.mp3
+play.log
+.env

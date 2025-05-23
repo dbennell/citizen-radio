@@ -1,0 +1,61 @@
+{
+  "stationName": "Radio Arc-Corp",
+  "djName": "DJ Quantum",
+  "imageInterval": 480,
+  "uptimeHours": null,
+  "uptimeMode": "track",
+  "trackHistory": {
+    "historySize": 20,
+    "weights": { "id": 0, "intro": 0, "ad": 2, "dj": 60, "music": 100 }
+  },
+  "ttsProfiles": {
+    "dj": "en-US-Chirp3-HD-Enceladus",
+    "ad": "en-US-Chirp3-HD-Charon",
+    "intro": "en-US-Chirp3-HD-Enceladus",
+    "segway": "en-US-Chirp3-HD-Enceladus"
+  },
+  "ttsAllowedPatterns": [
+    "en-US-Chirp3-HD-*",
+    "en-UK-Chirp3-HD-*",
+    "en-AU-Chirp3-HD-*",
+    "en-US-Chirp-HD-*",
+    "en-UK-Chirp-HD-*",
+    "en-AU-Chirp-HD-*"
+  ],
+  "djOptions": {
+    "includePodcasts": true
+  },
+  "debug": false,
+  "context": "You are playing the role of a (NPC) Radio DJ in the game world of Star Citizen.",
+  "vibe": "A mainstream popular commercial radio station based in Area-18 on ArcCorp playing modern chart music.",
+  "segwayFunny": 0.25,
+  "aiPrompts": {
+    "dj": "A lively and enthusiastic (slightly sarcastic and comedic) radio host for a galactic space station. Add flair and personality to this regular dj talk segment! Only the text to be spoken!",
+    "ad": "Generate compelling commercial voiceover for futuristic product advertisements. Only the text to be spoken! You are not the DJ, you are are 'Larry Scott' Advert Sales Guy.",
+    "intro": "Create energetic station intros that captivate listeners. Only the text to be spoken!",
+    "segway": "Write a seamless transition between segments. Only the text to be spoken!",
+    "segwayFunny": "Before announcing the next track, throw in a quick, off-the-cuff, DJ-style joke, cheeky comment or thought of the day."
+  },
+  "schedule": {
+    "defaultPattern": [
+      "intro",
+      "segway",
+      "music",
+      "segway",
+      "music",
+      "ad",
+      "music",
+      "dj",
+      "segway",
+      "music",
+      "segway",
+      "music",
+      "ad",
+      "music"
+    ]
+  },
+  "streamMode": "youtube",
+  "youtube": {
+    "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2"
+  }
+}

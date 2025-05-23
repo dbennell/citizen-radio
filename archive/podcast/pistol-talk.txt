@@ -1,0 +1,32 @@
+## Create an 8-minute podcast about Star Citizen pistols
+
+host: Dex Rylan
+guest: Gunnery Sgt. Tyler Hale (Ret. UEE Marine weapons instructor)
+guest: Dr. Mina Cortez (ballistics engineer & curator, Terra Arms Museum)
+
+---
+
+### some key points to cover
+
+* **Why sidearms matter:** last-line defence in boarding actions, frontier wildlife control, mandated by UEE merchant-shipping regs (code 47-C).
+* **Energy vs ballistic vs electron vs frag:** power-cell logistics, armor penetration, crowd-control trade-offs.
+* **Top 5 pistols in-verse:**
+
+  * *Klaus & Werner Arclight* — zero-recoil energy classic, security-force staple.
+  * *Kastak Arms CODA* — .50 slug “hand cannon”, six-round punch through composite glass.
+  * *Gemini S38* — 13-round polymer frame, cheap and ubiquitous among haulers.
+  * *Kastak Arms Yubarev* — electron burst chains damage between clustered targets.
+  * *Greycat Salvo Frag* — micro-grenade pistol; civilian-legal only outside atmo-regulated zones.
+* **Recent tuning (Alpha 3.23):** effective-range normalization (ballistic ≈ 35 m, energy ≈ 25 m) and magazine/ammo repack changes.
+* **New ammunition options:** Gemini Seeker fragmenting rounds; CODA tungsten penetrators for heavy undersuits.
+* **Where to test during Invictus 2955:** Bevic Centre live-fire range opposite Hall C Idris hologram; rental kiosks allow side-by-side trials.
+* **Buying & training advice:** rent before purchase, grip fit over caliber, carry ratio of mags to MedPens in boarding kits.
+* **Cultural angle:** pistols as status symbols—engraved Arclights for corporate execs, CODA customs in Pyro pirate culture.
+
+---
+
+### notes
+
+* Recording location: Area 18, overlooking Invictus exhibits.
+* Keep tone friendly but authoritative; Dex moderates, Hale provides combat anecdotes, Dr. Cortez supplies technical specs and lore trivia.
+

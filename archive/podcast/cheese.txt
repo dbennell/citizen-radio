@@ -1,0 +1,8 @@
+## Create an 4-minute podcast about cheese
+
+host: Dex Rylan
+guest: Cheese maker, Audrey kemp
+guest: Bob, cheese lover
+
+
+talk about cheese, brie, chedder, etc
