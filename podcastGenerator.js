@@ -23,7 +23,7 @@ const {
 } = require('./audioSynthesizer');
 
 async function run(opts) {
-  const {
+  let {
     prompt,
     topic,
     durationMinutes = 6,
@@ -40,6 +40,28 @@ async function run(opts) {
 
   console.log(`Using temp directory for podcast: ${tempDirectory}`);
   fs.mkdirSync(tempDirectory, { recursive: true }); // Ensure temp dir exists
+
+  // Extract metadata if it wasn't explicitly provided
+  if (!topic && participantData) {
+    // Try to get topic from participant metadata
+    const anyParticipant = Object.values(participantData)[0];
+    if (anyParticipant?._metadata?.topic) {
+      topic = anyParticipant._metadata.topic;
+      console.log(`Using topic from participant metadata: "${topic}"`);
+    }
+  }
+
+  // Extract duration if specified in metadata
+  if (participantData) {
+    const anyParticipant = Object.values(participantData)[0];
+    if (anyParticipant?._metadata?.durationMinutes) {
+      const metaDuration = anyParticipant._metadata.durationMinutes;
+      if (metaDuration && typeof metaDuration === 'number') {
+        durationMinutes = metaDuration;
+        console.log(`Using duration from participant metadata: ${durationMinutes} minutes`);
+      }
+    }
+  }
 
   const input = prompt || topic;
   if (!input) throw new Error('No prompt or topic provided');

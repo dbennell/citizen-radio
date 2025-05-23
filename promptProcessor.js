@@ -140,11 +140,15 @@ async function processPromptFile(type, filePath) {
             if (!fs.existsSync(outputFile)) {
                 console.log(`🫛 Generating podcast → ${outputFile}`);
 
-                const { participantData, hostNames, guestNames } = await extractParticipantInfo(promptContent) || {
+                const extractedInfo = await extractParticipantInfo(promptContent) || {
                     participantData: {},
                     hostNames: [],
                     guestNames: [],
+                    topic: "",
+                    durationMinutes: 6
                 };
+
+                const { participantData, hostNames, guestNames, topic, durationMinutes } = extractedInfo;
 
                 try {
                     // Validate extracted participant data
@@ -155,15 +159,18 @@ async function processPromptFile(type, filePath) {
                     return; // Abort processing if validation fails
                 }
 
-
                 console.log("Extracted participantData:", participantData);
                 console.log("Hosts:", hostNames);
                 console.log("Guests:", guestNames);
+                console.log("Topic:", topic);
+                console.log("Duration:", durationMinutes, "minutes");
 
                 await processParticipantData(participantData);
 
                 let podcastConfig = {
                     prompt: promptContent,
+                    topic,
+                    durationMinutes,
                     hostNames,
                     guestNames,
                     participantData,
@@ -208,11 +215,6 @@ async function processPromptFile(type, filePath) {
         } catch (cleanupErr) {
             console.error(`❗ Failed to cleanup prompt file (${filePath}):`, cleanupErr.message);
         }
-
-        // // Optional temp cleanup
-        // if (!STATION_CONFIG.debug) {
-        //     cleanTempDirectory(tempDir);
-        // }
     }
 }
 

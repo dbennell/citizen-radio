@@ -31,13 +31,20 @@ function preprocessScriptParts(parts) {
     });
 }
 
+/**
+ * Extract and process podcast participant information from different prompt formats
+ * @param {string} promptText - The raw text of the podcast prompt
+ * @returns {Promise<Object>} - Object containing participantData, hostNames, and guestNames
+ */
 async function extractParticipantInfo(promptText) {
     const functionSpec = {
         name: "extract_participants",
-        description: "Extracts podcast participants and their metadata",
+        description: "Extracts podcast participants and their metadata from various prompt formats",
         parameters: {
             type: "object",
             properties: {
+                topic: { type: "string" },
+                durationMinutes: { type: ["number", "null"] },
                 participants: {
                     type: "object",
                     additionalProperties: {
@@ -54,23 +61,42 @@ async function extractParticipantInfo(promptText) {
                     }
                 }
             },
-            required: ["participants"],
+            required: ["participants", "topic"],
             additionalProperties: false
         }
     };
 
     const systemPrompt = `
-You are a utility that reads a short podcast‐setup text and returns a JSON object
-mapping each participant's NAME to an object with:
-  - name: full name
-  - role: "HOST" or "GUEST"
-  - occupation: parse from any text before or after the name, or null if not provided
-  - gender: "male", "female", or "neutral"
-  - title: professional title based on occupation (Doctor, Captain, Sergeant, etc.) or fallback (Mr, Ms)
-Input lines look like:
-  host: Dex Rylan
-  guest: Gunnery Sgt. Tyler “Gunsmoke” Hale (Ret. UEE Marine weapons instructor)
-  guest: Dr. Mina Cortez (ballistics engineer & curator, Terra Arms Museum)
+You are a utility that extracts podcast information from various prompt formats.
+You should handle formats like:
+
+FORMAT 1:
+Topic: The future of quantum travel
+Hosts:
+- Markus Reynolds: Male, senior science correspondent
+- Leela Chen: Female, engineer
+Guests:
+- Dr. Xander Smith: Male, quantum physicist
+- Captain Aria Jackson: Female, test pilot
+
+FORMAT 2:
+## Create a 8 minute podcast about Invictus
+host: Dex Rylan
+guest: Retired UEE Navy Captain, Lorna Sterling
+guest: Ex Invictus organiser, Steve Fisher
+
+FORMAT 3:
+host: Dex Rylan
+guest: Cheese maker, Audrey kemp
+guest: Bob, cheese lover
+
+Parse the duration if specified (default to 6 minutes if not specified).
+Extract the topic, and for each participant:
+1. Full name
+2. Role (HOST/GUEST)
+3. Gender (male/female/neutral) - infer from name if not explicitly stated
+4. Occupation or description (if provided)
+5. Title (Mr/Ms/Dr/Captain/etc.)
     `.trim();
 
     try {
@@ -91,7 +117,7 @@ Input lines look like:
         if (msg.function_call?.name === "extract_participants") {
             let args;
             try {
-                args = JSON.parse(msg.function_call.arguments); // Robust JSON parsing
+                args = JSON.parse(msg.function_call.arguments);
             } catch (err) {
                 console.warn("Failed to parse function_call.arguments:", msg.function_call.arguments, "Error:", err.message);
                 throw new Error("Invalid JSON in LLM response for participants");
@@ -99,6 +125,10 @@ Input lines look like:
 
             // Check if participants object exists and has entries
             if (args && args.participants && typeof args.participants === "object" && Object.keys(args.participants).length > 0) {
+                // Extract topic and duration
+                const topic = args.topic || "";
+                const durationMinutes = args.durationMinutes || 6;
+
                 // Validate participants structure
                 const validParticipants = {};
                 const hostNames = [];
@@ -113,7 +143,11 @@ Input lines look like:
                         typeof details.title === "string"
                     ) {
                         // Add to valid participants
-                        validParticipants[name] = details;
+                        validParticipants[name] = {
+                            ...details,
+                            // Add topic and duration to each participant for accessibility
+                            _metadata: { topic, durationMinutes }
+                        };
 
                         // Separate hosts and guests
                         if (details.role === "HOST") hostNames.push(name);
@@ -125,7 +159,13 @@ Input lines look like:
 
                 if (Object.keys(validParticipants).length > 0) {
                     console.log("Validated participantData from LLM:", validParticipants);
-                    return { participantData: validParticipants, hostNames, guestNames };
+                    return {
+                        participantData: validParticipants,
+                        hostNames,
+                        guestNames,
+                        topic,
+                        durationMinutes
+                    };
                 } else {
                     throw new Error("LLM returned invalid participant objects");
                 }
@@ -148,71 +188,118 @@ function parseParticipantsManually(promptText) {
     const hostNames = [];
     const guestNames = [];
 
+    // Extract topic
+    let topic = "";
+    let durationMinutes = 6; // Default duration
+
     const lines = promptText.split("\n").map(l => l.trim()).filter(Boolean);
 
+    // First, try to extract topic and duration
     for (const line of lines) {
-        const match = line.match(/^(host|guest):\s*(.+)$/i);
-        if (!match) continue;
+        // Check for lines explicitly starting with "Topic:" or a heading that mentions "podcast"
+        if (/^topic:\s*(.+)/i.test(line)) {
+            topic = line.replace(/^topic:\s*/i, '').trim();
+        }
+        // Look for headings that might include duration and topic
+        else if (/^#+\s*create\s+a\s+(\d+)(?:\s*\-?minute|\s*min\.?|\s*m)?\s+podcast(?:\s+about\s+(.+))?/i.test(line)) {
+            const match = line.match(/^#+\s*create\s+a\s+(\d+)(?:\s*\-?minute|\s*min\.?|\s*m)?\s+podcast(?:\s+about\s+(.+))?/i);
+            if (match) {
+                durationMinutes = parseInt(match[1], 10);
+                if (match[2]) topic = match[2].trim();
+            }
+        }
+        // For unlabeled topics, check lines starting with podcast about
+        else if (/^podcast\s+about\s+(.+)/i.test(line)) {
+            topic = line.replace(/^podcast\s+about\s+/i, '').trim();
+        }
+    }
 
-        const role = match[1].toUpperCase();
-        let raw = match[2]; // Original string: might include occupation, name, etc.
+    // If no topic found and first line isn't a host/guest, use it as topic
+    if (!topic && lines.length > 0 && !lines[0].match(/^(host|guest):/i)) {
+        topic = lines[0].trim();
+    }
+
+    // Identify and extract participants
+    for (const line of lines) {
+        // Standardized role extraction with better regex
+        // Match formats: "host: Name", "guest: Name", "HOST - Name", etc.
+        const roleMatch = line.match(/^(host|guest)(?::|[\s\-]+)(.+)$/i);
+
+        if (!roleMatch) continue;
+
+        const role = roleMatch[1].toUpperCase();
+        let raw = roleMatch[2].trim(); // Text after role identifier
 
         // Attempt to isolate name and occupation
         let name = raw;
         let occupation = null;
 
-        // Handle cases like "Gunnery Sgt. Tyler Hale (Ret. UEE Marine weapons instructor)"
-        const occupationMatch = name.match(/\(([^)]+)\)$/); // Look for parentheses enclosing extra info
-        if (occupationMatch) {
-            occupation = occupationMatch[1].trim();
-            name = name.replace(occupationMatch[0], '').trim(); // Remove parentheses and content from name
+        // Check for various occupation formats
+
+        // Format: "Name (Occupation)"
+        const parenthesesMatch = name.match(/^([^(]+)\s*\(([^)]+)\)$/);
+        if (parenthesesMatch) {
+            name = parenthesesMatch[1].trim();
+            occupation = parenthesesMatch[2].trim();
+        }
+        // Format: "Occupation, Name"
+        else {
+            const commaSplit = raw.split(',').map(part => part.trim());
+            if (commaSplit.length > 1) {
+                // Last part is likely the name, everything before is occupation
+                name = commaSplit[commaSplit.length - 1];
+                occupation = commaSplit.slice(0, -1).join(', ');
+            }
         }
 
-        // Handle commas separating occupation (e.g., "Cheese maker, Audrey Kemp")
-        const commaParts = name.split(',').map(part => part.trim());
-        if (commaParts.length > 1) {
-            // Assume everything after the comma is the name, and everything before is the occupation
-            occupation = commaParts[0];
-            name = commaParts.slice(1).join(','); // Rejoin name in case of multiple commas
+        // Extract title from name if present
+        const titleMatch = name.match(/^(Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Captain|Capt\.?|Cmdr\.?|Prof\.?|Retired|Ex)\s+/i);
+        let title = null;
+        if (titleMatch) {
+            title = titleMatch[1].replace(/\.$/, ''); // Remove trailing period from title
+            name = name.replace(titleMatch[0], '').trim();
         }
 
-        // Handle titles (e.g., "Dr.", "Ms.") and remove them from the name
-        const titleMatch = name.match(/^(Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Gunnery Sgt\.?|Captain|Capt\.?|Cmdr\.?|Prof\.?)\s+/i);
-        let title = titleMatch ? titleMatch[1].replace(/\.$/, '') : null; // Remove trailing period from titles
-        if (titleMatch) name = name.replace(titleMatch[0], '').trim();
+        // Handle titles that might be in the occupation
+        if (occupation) {
+            // Look for title patterns in occupation
+            const titleInOcc = occupation.match(/^(Dr\.?|Mr\.?|Mrs\.?|Ms\.?|Captain|Capt\.?|Cmdr\.?|Prof\.?|Retired|Ex)/i);
+            if (titleInOcc && !title) {
+                title = titleInOcc[1].replace(/\.$/, '');
+            }
+        }
 
-        // Use `gender-detection` to determine gender based on the first name, if possible
-        const firstName = name.split(' ')[0]; // Use the first name for gender detection
+        // Extract nickname in quotes if present
+        const nicknameMatch = name.match(/"([^"]+)"/);
+        const nickname = nicknameMatch ? nicknameMatch[1] : null;
+        if (nicknameMatch) {
+            name = name.replace(nicknameMatch[0], '').replace(/\s+/g, ' ').trim();
+        }
+
+        // Use gender-detection for first name, fall back to neutral
+        const firstName = name.split(' ')[0];
         let gender = genderDetect.detect(firstName);
-
-        // Default to "neutral" if gender cannot be inferred
         if (!gender || !['male', 'female'].includes(gender)) {
-            console.log(`Could not determine gender from name "${firstName}". Defaulting to "neutral".`);
             gender = 'neutral';
         }
 
-        // Set default title based on the gender
+        // Set default title based on gender if none was found
         title = title || (gender === 'female' ? 'Ms' : gender === 'male' ? 'Mr' : 'Mx');
 
-        // Store nickname (if present in quotes) and format the name
-        const nicknameMatch = name.match(/“([^”]+)”|\"([^\"]+)\"/); // Handle nicknames enclosed in quotes
-        const nickname = nicknameMatch ? (nicknameMatch[1] || nicknameMatch[2]) : null;
-        if (nicknameMatch) name = name.replace(nicknameMatch[0], '').trim();
+        // Construct final name with nickname if present
+        const fullName = nickname ? `${name} ("${nickname}")` : name;
 
-        const fullName = nickname ? `${name} (“${nickname}”)` : name;
-
-        // Add the participant data
-        const data = {
+        // Add participant data to our collection
+        participantData[fullName] = {
             name: fullName,
             role,
             occupation: occupation || null,
             gender,
             title,
+            _metadata: { topic, durationMinutes }
         };
 
-        participantData[fullName] = data;
-
-        // Categorize as host or guest based on the role
+        // Categorize by role
         if (role === 'HOST') hostNames.push(fullName);
         else if (role === 'GUEST') guestNames.push(fullName);
     }
@@ -221,7 +308,13 @@ function parseParticipantsManually(promptText) {
     console.log('Hosts:', hostNames);
     console.log('Guests:', guestNames);
 
-    return { participantData, hostNames, guestNames };
+    return {
+        participantData,
+        hostNames,
+        guestNames,
+        topic,
+        durationMinutes
+    };
 }
 
 function parseScript(script, participants) {

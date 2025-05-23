@@ -184,11 +184,16 @@ The system automatically monitors the `prompts/` directories for new text files 
 
 ### Podcast Generation
 
-Podcasts use a special format to define participants and their characteristics:
+Podcasts can be defined in multiple formats. Here are some examples:
 
-1. **Create a Podcast Prompt**:
+#### Detailed Format
    ```
    Topic: The future of quantum travel technology
+   
+   Directon:
+   - Please spend about 4 minutes with each guest
+   - Xander is hopfully optimistic about his drive
+   - Leela keeps trying to undermine the new tech
    
    Hosts:
    - Markus Reynolds: Male, senior science correspondent, enthusiastic about new tech
@@ -199,18 +204,40 @@ Podcasts use a special format to define participants and their characteristics:
    - Captain Aria Jackson: Female, test pilot, first to use the experimental drive
    
    Notes:
-   The podcast should discuss recent breakthroughs in quantum drive technology,
+   The podcast should discuss recent breakthroughs in this new quantum drive technology,
    with Dr. Smith explaining the technical details while Captain Jackson shares
-   her experiences testing the new system.
+   her experiences testing the new drive.
    ```
 
-2. **Voice Assignment**:
-    - The system will automatically assign appropriate TTS voices to each character
-    - Voices are selected based on the specified gender
-    - Once assigned, voices remain consistent for characters across episodes
+#### Simple Format with Duration
+   ```
+    ## Create a 8 minute podcast about Invictus
+    
+    host: Dex Rylan 
+    guest: Retired UEE Navy Captain, Lorna Sterling 
+    guest: Ex Invictus organiser, Steve Fisher
+    
+    Remeber: invictus is hosted in Area 18 this year, which is where you are located
+   ```
 
-3. **Configuration Options**:
-    - For more control, create a `.cfg.json` file with the same base name as your prompt
-    - This allows customizing episode length, style, and other parameters
+#### Minimal Format
+   ```
+    Talk about cheese
+   
+    host: Dex Rylan 
+    guest: Cheese maker, Audrey Kemp 
+    guest: Bob, cheese lover
+   ```
+
+
+The system automatically:
+- Detects format and extracts participants, topic and duration (default: 6 minutes)
+- Assigns appropriate voices based on gender (inferred from names when not specified)
+- Creates consistent voice assignments so characters sound the same across episodes
+- Generates natural conversation between all participants
+
+For more control, create a `.cfg.json` file with the same base name as your prompt to customize parameters like episode length, style, and other settings.
+
+
 
 Citizen Radio brings the Star Citizen universe to life through an immersive radio experience, combining AI-generated content with music to create a persistent broadcast that enhances the game's atmosphere and lore.
