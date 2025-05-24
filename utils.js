@@ -5,10 +5,6 @@ const NodeID3 = require("node-id3");
 
 const runningProcesses = [];
 
-// Utility to compute the "played" directory for a given type
-function getPlayedDir(type) {
-    return path.join(__dirname, "played", type);
-}
 
 function spawnTrackedProcess(command, args, options = {}) {
     const proc = spawn(command, args, options);
@@ -46,8 +42,9 @@ function moveFileToPlayed(filePath, type) {
         return;   // No further processing required
     }
 
+    // TODO: Check if and how we can remove this as we should not be using the played folder anymore
     // Default behaviour for all other types
-    const playedDir = getPlayedDir(type);
+    const playedDir = path.join(__dirname, "played", type);
 
     if (path.dirname(filePath) === readyDir) {
         fs.mkdirSync(playedDir, { recursive: true });
