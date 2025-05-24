@@ -234,10 +234,3 @@ The raffle pool might have 30 tickets total, with Track A having a 16.7% chance 
 ## ✅ Conclusion
 
 The **User Ratings System** with **Weighted Raffle Selection** brings community interaction to Citizen Radio without compromising its autonomous nature. By allowing listeners to shape the station through feedback, we introduce emotional investment, variety, and dynamic programming—all aligned with the immersive spirit of a living, in-universe broadcast.
-
-```
-
----
-
-Let me know if you'd like this saved into a file or pushed into a documentation repo.
-```
