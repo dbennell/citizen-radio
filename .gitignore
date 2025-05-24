@@ -1,7 +1,12 @@
+# Ignore mp3 files except those within example folder
+/example/**/*.mp3
+!example/**
+
+# Other ignore patterns as they are
+/*.log
+/node_modules/
+/.env
 /ready/
 /prompts/
 /not-ready/
 /temp/
-*.mp3
-play.log
-.env

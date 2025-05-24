@@ -116,16 +116,18 @@ citizen-radio/
     1. **Add Content**
         - Place MP3 files in the appropriate directories `ready/`
         - Add image files to for stream visualization `ready/image/`
-
-    2. **Start the Station**
-        - Basic start:
-``` 
-     npm start
-```
-- With custom uptime:
-``` 
-     npm start -- --uptime 4 --uptime-mode track
-```
+    2. **Or copy Example Content**
+        - `bash cp -r example/*`
+        - This will copy the necessary example files to the main directory, giving you everything you need to test it out right away.
+    3. **Start the Station**
+          - Basic start:
+        ``` 
+             npm start
+        ```
+        - Start with custom uptime args:
+        ``` 
+             npm start --uptime 4
+        ```
 ## Configuration Options
 ### Station Configuration () `station.json`
 #### Basic Settings
