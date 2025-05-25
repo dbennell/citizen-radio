@@ -69,5 +69,9 @@
     "ratingPersistence": true,
     "displayOnStream": true,
     "streamDelay": 0
+  },
+  "contentQueue": {
+    "minQueueSize": 3,
+    "maxQueueSize": 8
   }
 }

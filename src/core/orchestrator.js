@@ -9,10 +9,12 @@ const chalk = require('chalk').default;
 const ratingManager = require('../managers/ratingsManager');
 const { fetchLiveVideoId, extractMetadata, fetchLastChatComments } = require('../utils');
 const { createCanvas, loadImage } = require('canvas'); // npm install canvas
+const ContentQueueManager = require('../managers/contentQueueManager');
 
 let shouldStop = false;
 let stopAfterNextMusic = false;
 let persistentVideoId = STATION_CONFIG.youtube?.videoId || null;
+let contentQueue = null;
 
 /**
  * Renders a live overlay PNG with cover art, track info, rating, and chat comments
@@ -157,12 +159,19 @@ async function playbackLoop() {
         : null;
     const startTime = Date.now();
 
-    let nextEntry = null;
     const vid = await getPersistentVideoId();
     if (vid) console.log('📹 Live commenting enabled:', vid);
 
     console.log(chalk.yellow(`▶️ Starting playback: ${pattern.join(', ')}`));
     console.log(chalk.magenta(`⏱️ Uptime: ${STATION_CONFIG.uptimeHours || '∞'}h, mode: ${STATION_CONFIG.uptimeMode || 'none'}`));
+
+    // Initialize content queue
+    contentQueue = new ContentQueueManager({
+        pattern
+    });
+
+    await contentQueue.initialize();
+    console.log(chalk.blue(`📋 Content queue initialized with ${contentQueue.queueLength} items`));
 
     while (!shouldStop) {
         // Uptime enforcement
@@ -178,115 +187,95 @@ async function playbackLoop() {
             }
         }
 
-        console.log(chalk.green(`🎧 New cycle at ${new Date().toLocaleTimeString()}`));
+        console.log(chalk.green(`🎧 New playback cycle at ${new Date().toLocaleTimeString()}`));
 
-        for (let i = 0; i < pattern.length && !shouldStop; i++) {
-            const type = pattern[i];
+        // Get the next item from the queue
+        const queueItem = contentQueue.getNextItem();
 
-            // -- Segway --
-            if (type === 'segway') {
-                const nextType = pattern[i + 1];
-                if (nextType && nextType !== 'segway' && !nextEntry) {
-                    nextEntry = await pickNextTrack(nextType);
-                }
-                if (!nextEntry?.meta?.title) continue;
+        if (!queueItem) {
+            console.warn('⚠️ Content queue is empty, waiting for replenishment...');
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            continue;
+        }
 
-                const recent = getLastPlays(historySize);
-                let ref = recent.slice().reverse().find(e => e.type === 'music' && (weights[e.type] || 0) > 0 && e.meta.title !== 'Placeholder Track');
-                if (!ref) ref = recent.find(e => (weights[e.type] || 0) > 0 && e.meta.title !== 'Placeholder Track');
-
-                const prevSegMeta = ref ? { ...ref.meta, type: ref.type } : { type: 'start', title: '' };
-                const nextSegMeta = { ...nextEntry.meta, type: nextType };
-
+        try {
+            // Play segway if available
+            if (queueItem.segway && queueItem.segway.filepath) {
                 try {
-                    const text = await generateSegway(prevSegMeta, nextSegMeta);
-                    if (!text.trim()) continue;
-                    const segFile = await prepareSegway(text, prevSegMeta, nextSegMeta, `${prevSegMeta.type}_to_${nextSegMeta.type}`);
-                    if (!segFile) continue;
+                    console.log(`🔄 Playing queued segway before ${queueItem.type}: "${queueItem.meta.title}"`);
 
-                    try {
-                        if (STATION_CONFIG.streamMode === 'youtube') {
-                            await streamFile(segFile);
-                        } else {
-                            await playFile(segFile);
-                        }
-                        // Only delete the file after successful playback
-                        if (fs.existsSync(segFile)) {
-                            fs.unlinkSync(segFile);
-                        }
-                    } catch (playErr) {
-                        console.error('Error playing segway:', playErr);
-                        // Don't delete the file if playback failed
-                    }
-                } catch (err) {
-                    console.error('Segway generation error:', err);
-                }
-                continue;
-            }
-
-            // -- Track --
-            let entry;
-            if (type === 'dj' && includePodcasts) {
-                entry = await pickNextTrackWithPodcasts();
-            } else if (nextEntry) {
-                entry = nextEntry;
-                nextEntry = null;
-            } else {
-                entry = await pickNextTrack(type);
-            }
-            if (!entry) continue;
-
-            try {
-                const trackRel = path.relative(READY_DIR(''), entry.filepath);
-                if (type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
-                    ratingManager.setCurrentlyPlaying({ trackRel, title: entry.meta.title, artist: entry.meta.artist, type });
-                    const windowStart = ratingManager.openCommentWindow();
-                    console.log(`📊 Rating: tracking "${entry.meta.title}" from ${windowStart}`);
-                }
-
-                try {
                     if (STATION_CONFIG.streamMode === 'youtube') {
-                        await updateOverlay(entry.filepath, vid);
-                        await streamFile(entry.filepath);
+                        await streamFile(queueItem.segway.filepath);
                     } else {
-                        await playFile(entry.filepath);
+                        await playFile(queueItem.segway.filepath);
                     }
 
-                    // Only log the play if streaming was successful
-                    appendPlayLog(trackRel, type, entry.meta);
-
-                    if (type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
-                        const windowEnd = ratingManager.closeCommentWindow();
-                        const count = await ratingManager.pollForComments(vid);
-                        console.log(`📊 Collected ${count} comment${count===1?'':'s'} up to ${windowEnd}`);
+                    // Delete segway file after playing
+                    if (fs.existsSync(queueItem.segway.filepath)) {
+                        fs.unlinkSync(queueItem.segway.filepath);
                     }
-                } catch (playErr) {
-                    console.error(`Error streaming ${type} "${entry.meta.title}":`, playErr);
+                } catch (segwayErr) {
+                    console.error('Error playing segway:', segwayErr);
+                }
+            }
 
-                    // If we're in YouTube mode, try to recover the streaming pipeline
-                    if (STATION_CONFIG.streamMode === 'youtube') {
-                        try {
-                            console.log('🔄 Attempting to recover streaming pipeline...');
-                            const { recoverStreamingPipeline } = require('./streamer');
-                            await recoverStreamingPipeline();
-                            console.log('✅ Streaming pipeline recovery complete, continuing playback');
-                        } catch (recoverErr) {
-                            console.error('❌ Failed to recover streaming pipeline:', recoverErr);
-                            // Add a delay before continuing to avoid rapid failure loops
-                            console.log('⏱️ Waiting before continuing playback...');
-                            await new Promise(resolve => setTimeout(resolve, 5000));
-                        }
+            // Play the main content
+            try {
+                const trackRel = path.relative(READY_DIR(''), queueItem.filepath);
+
+                if (queueItem.type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
+                    ratingManager.setCurrentlyPlaying({ 
+                        trackRel, 
+                        title: queueItem.meta.title, 
+                        artist: queueItem.meta.artist, 
+                        type: queueItem.type 
+                    });
+                    const windowStart = ratingManager.openCommentWindow();
+                    console.log(`📊 Rating: tracking "${queueItem.meta.title}" from ${windowStart}`);
+                }
+
+                if (STATION_CONFIG.streamMode === 'youtube') {
+                    await updateOverlay(queueItem.filepath, vid);
+                    await streamFile(queueItem.filepath);
+                } else {
+                    await playFile(queueItem.filepath);
+                }
+
+                // Log the play
+                appendPlayLog(trackRel, queueItem.type, queueItem.meta);
+
+                if (queueItem.type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
+                    const windowEnd = ratingManager.closeCommentWindow();
+                    const count = await ratingManager.pollForComments(vid);
+                    console.log(`📊 Collected ${count} comment${count===1?'':'s'} up to ${windowEnd}`);
+                }
+            } catch (playErr) {
+                console.error(`Error streaming ${queueItem.type} "${queueItem.meta.title}":`, playErr);
+
+                // If we're in YouTube mode, try to recover the streaming pipeline
+                if (STATION_CONFIG.streamMode === 'youtube') {
+                    try {
+                        console.log('🔄 Attempting to recover streaming pipeline...');
+                        const { recoverStreamingPipeline } = require('./streamer');
+                        await recoverStreamingPipeline();
+                        console.log('✅ Streaming pipeline recovery complete, continuing playback');
+                    } catch (recoverErr) {
+                        console.error('❌ Failed to recover streaming pipeline:', recoverErr);
+                        // Add a delay before continuing to avoid rapid failure loops
+                        console.log('⏱️ Waiting before continuing playback...');
+                        await new Promise(resolve => setTimeout(resolve, 5000));
                     }
                 }
-            } catch (err) {
-                console.error(`Error preparing ${type} for playback:`, err);
             }
+        } catch (err) {
+            console.error(`Error playing queued content:`, err);
+        }
 
-            if (stopAfterNextMusic && type === 'music') {
-                console.log('🛑 Stopping after this music track.');
-                shouldStop = true;
-                break;
-            }
+        // Check if we should stop after music
+        if (stopAfterNextMusic && queueItem.type === 'music') {
+            console.log('🛑 Stopping after this music track.');
+            shouldStop = true;
+            break;
         }
     }
 }
@@ -304,12 +293,31 @@ async function pickNextTrackWithPodcasts() {
     return { filepath: choice, meta };
 }
 
-function stopPlayback() { shouldStop = true; }
-function requestStop() { stopAfterNextMusic = true; }
+function stopPlayback() { 
+    shouldStop = true; 
+
+    // Clean up content queue if it exists
+    if (contentQueue) {
+        contentQueue.cleanup();
+    }
+}
+
+function requestStop() { 
+    stopAfterNextMusic = true; 
+}
+
+/**
+ * Get the current content queue instance
+ * @returns {ContentQueueManager|null} The content queue instance or null if not initialized
+ */
+function getContentQueue() {
+    return contentQueue;
+}
 
 module.exports = {
     playbackLoop,
     stopPlayback,
     requestStop,
-    getPersistentVideoId
+    getPersistentVideoId,
+    getContentQueue
 };

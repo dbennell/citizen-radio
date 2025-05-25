@@ -109,14 +109,14 @@ function startYouTubeStreamer() {
           "44100",
           "-ac",
           "2",
-          "-thread_queue_size", "4096",  // Increase thread queue size
+          "-thread_queue_size", "8192",  // Increased thread queue size
           "-i",
           "pipe:0",
           "-c:a",
           "pcm_s16le",
           "-f",
           "s16le",
-          "-bufsize", "8192k",  // Increase buffer size
+          "-bufsize", "16384k",  // Increased buffer size
           fifoPath,
         ],
         { stdio: ["pipe", "inherit", "inherit"] },
@@ -181,14 +181,14 @@ function startYouTubeStreamer() {
                 "-i", "/tmp/current_overlay.png",  // Use symbolic link to allow image updates
 
                 // ───────── Buffering ─────────
-                "-thread_queue_size", "4096", // bigger buffer on next input
+                "-thread_queue_size", "8192", // bigger buffer on next input
 
                 // ───────── Audio ─────────
                 "-re",
                 "-f", "s16le",
                 "-ar", "44100",
                 "-ac", "2",
-                "-thread_queue_size", "4096", // Increase thread queue size for audio
+                "-thread_queue_size", "8192", // Increased thread queue size for audio
                 "-i", fifoPath,
 
                 // ───────── Encoders & Filters ─────────
@@ -200,9 +200,9 @@ function startYouTubeStreamer() {
                 "-g", "60",
 
                 // bump your bitrates into YouTube's sweet spot
-                "-b:v", "3500k",
-                "-maxrate", "3500k",
-                "-bufsize", "8192k",        // Increased buffer size
+                "-b:v", "4000k",
+                "-maxrate", "4000k",
+                "-bufsize", "16384k",        // Increased buffer size
 
                 // Explicitly map video and audio streams
                 "-map", "0:v",
