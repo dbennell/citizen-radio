@@ -22,40 +22,56 @@ function cleanup() {
 
     // Create a promise to track cleanup completion
     const cleanupPromise = new Promise(async (resolve) => {
-        // Stop playback loop
-        stopPlayback();
+        try {
+            // Stop playback loop
+            stopPlayback();
 
-        // End FFmpeg stdin if it exists
-        const stdin = getFfmpegStdin();
-        if (stdin) {
-            console.log('🛑 Closing FFmpeg stdin...');
-            stdin.end();
-        }
-
-        // Stop the YouTube streamer
-        if (STATION_CONFIG.streamMode === 'youtube') {
-            if (metadataUpdateInterval) {
-                clearInterval(metadataUpdateInterval);
+            // End FFmpeg stdin if it exists
+            try {
+                const stdin = getFfmpegStdin();
+                if (stdin) {
+                    console.log('🛑 Closing FFmpeg stdin...');
+                    stdin.end();
+                }
+            } catch (stdinErr) {
+                console.error('⚠️ Error closing FFmpeg stdin:', stdinErr.message);
             }
 
-            const { stopYouTubeStreamer } = require('./streamer');
-            await stopYouTubeStreamer();
+            // Stop the YouTube streamer
+            if (STATION_CONFIG.streamMode === 'youtube') {
+                if (metadataUpdateInterval) {
+                    clearInterval(metadataUpdateInterval);
+                }
+
+                try {
+                    const { stopYouTubeStreamer } = require('./streamer');
+                    await stopYouTubeStreamer();
+                } catch (streamerErr) {
+                    console.error('⚠️ Error stopping YouTube streamer:', streamerErr.message);
+                }
+            }
+
+            // Import killAllTrackedProcesses to ensure all processes are terminated
+            const { killAllTrackedProcesses } = require('../utils');
+
+            // Wait for all processes to be terminated
+            console.log('🧹 Terminating all remaining processes...');
+            await killAllTrackedProcesses();
+        } catch (err) {
+            console.error('⚠️ Error during cleanup:', err.message);
+        } finally {
+            // Always resolve to ensure we exit
+            resolve();
         }
-
-        // Import killAllTrackedProcesses to ensure all processes are terminated
-        const { killAllTrackedProcesses } = require('../utils');
-
-        // Wait for all processes to be terminated
-        console.log('🧹 Terminating all remaining processes...');
-        await killAllTrackedProcesses();
-
-        resolve();
     });
 
     // Wait for cleanup to complete before exiting
     cleanupPromise.then(() => {
         console.log('✅ Cleanup complete. Exiting...');
         process.exit(0);
+    }).catch(err => {
+        console.error('⚠️ Cleanup failed:', err.message);
+        process.exit(1);
     });
 }
 
@@ -96,7 +112,37 @@ function cleanTempDirectory(rootDir) {
 
     // Check if the streamMode is YouTube and initialize the streamer
     if (STATION_CONFIG.streamMode === 'youtube') {
-        startYouTubeStreamer(); // Initialize YouTube streaming pipeline here
+        // If no video ID was provided and we should fetch it, try to get it from the YouTube API
+        if (STATION_CONFIG.youtube?.shouldFetchVideoId) {
+            console.log('🔍 No video ID provided, attempting to fetch the most recent live stream...');
+            try {
+                const { fetchLiveVideoId } = require('../utils');
+                const videoId = await fetchLiveVideoId();
+                if (videoId) {
+                    console.log(`✅ Found video ID: ${videoId}`);
+                    STATION_CONFIG.youtube.videoId = videoId;
+                } else {
+                    console.warn('⚠️ Could not find a live stream video ID. Please provide one manually.');
+                }
+            } catch (err) {
+                console.error('❌ Failed to fetch live video ID:', err.message);
+            }
+        }
+
+        try {
+            // Initialize YouTube streaming pipeline and wait for it to be ready
+            await startYouTubeStreamer();
+        } catch (err) {
+            console.error('❌ Failed to initialize YouTube streamer:', err.message);
+            console.log('🔄 Attempting to recover before starting playback...');
+            try {
+                const { recoverStreamingPipeline } = require('./streamer');
+                await recoverStreamingPipeline();
+            } catch (recoverErr) {
+                console.error('❌ Failed to recover streaming pipeline:', recoverErr.message);
+                console.log('⚠️ Continuing with playback, but streaming may not work properly.');
+            }
+        }
     }
 
     if (STATION_CONFIG.streamMode === 'youtube' && STATION_CONFIG.youtube?.updateMetadata) {

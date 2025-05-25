@@ -45,6 +45,8 @@ The system is built with a modular design consisting of several key components:
 - **Segways**: Smooth transitions between content types
 - **Podcasts**: Longer-form talk segments with multiple characters discussing in-universe topics
 - **Images**: Artwork displayed on the stream, rotated periodically
+- **Live Chat Integration**: Displays YouTube live chat comments on the stream
+- **Rating System**: Collects and displays user ratings for music tracks
 
 ## Technologies Used
 - : Core application runtime environment **Node.js**
@@ -58,23 +60,49 @@ The system is built with a modular design consisting of several key components:
 ``` 
 citizen-radio/
 ├── .env                 # Environment variables (API keys)
-├── station.json         # Station configuration
-├── index.js             # Application entry point
-├── prompts/             # User-created content prompts
-│   ├── ads/             # Advertisement prompts
-│   ├── dj/              # DJ talk prompts
-│   ├── intros/          # Station ID prompts
-│   ├── podcast/         # Podcast episode prompts
-│   └── images/          # Image generation prompts
-├── ready/               # Processed content ready for streaming
-│   ├── music/           # Music tracks
-│   ├── ad/              # Generated advertisements
-│   ├── dj/              # Generated DJ segments
-│   ├── intro/           # Generated station IDs
-│   ├── podcast/         # Generated podcast episodes
-│   └── image/           # Cover images for stream
-├── temp/                # Temporary files during processing
-├── archive/             # Optional archive of processed content
+├── config/              # Configuration files
+│   └── default.json     # Default station configuration
+├── src/                 # Source code
+│   ├── core/            # Core functionality
+│   │   ├── config.js    # Configuration loading
+│   │   ├── main.js      # Application entry point
+│   │   ├── orchestrator.js # Main playback loop
+│   │   └── streamer.js  # FFmpeg streaming
+│   ├── audio/           # Audio processing
+│   ├── managers/        # Management components
+│   ├── podcast/         # Podcast generation
+│   ├── processors/      # Content processors
+│   ├── prompts/         # Prompt handling
+│   ├── segways/         # Transition handling
+│   ├── types/           # TypeScript definitions
+│   ├── utils/           # Utility functions
+│   └── voice/           # Voice synthesis
+├── data/                # Data files
+│   ├── prompts/         # User-created content prompts
+│   │   ├── ads/         # Advertisement prompts
+│   │   ├── dj/          # DJ talk prompts
+│   │   ├── intros/      # Station ID prompts
+│   │   ├── podcast/     # Podcast episode prompts
+│   │   └── images/      # Image generation prompts
+│   ├── ready/           # Processed content ready for streaming
+│   │   ├── music/       # Music tracks
+│   │   ├── ad/          # Generated advertisements
+│   │   ├── dj/          # Generated DJ segments
+│   │   ├── intro/       # Generated station IDs
+│   │   ├── podcast/     # Generated podcast episodes
+│   │   └── image/       # Cover images for stream
+│   ├── temp/            # Temporary files during processing
+│   └── archive/         # Optional archive of processed content
+├── tests/               # Test files
+│   ├── unit/            # Unit tests
+│   ├── integration/     # Integration tests
+│   ├── e2e/             # End-to-end tests
+│   ├── performance/     # Performance tests
+│   └── fixtures/        # Test fixtures
+├── docs/                # Documentation
+├── example/             # Example files
+├── assets/              # Static assets
+├── scripts/             # Helper scripts
 └── play.log             # Log of played content
 ```
 ## Setup Instructions
@@ -83,22 +111,26 @@ citizen-radio/
    git clone https://github.com/yourusername/citizen-radio.git
    cd citizen-radio
 ```
-1. **Install Dependencies**
+2. **Install Dependencies**
 ``` 
    npm install
 ```
-1. **Environment Configuration**
-    - Copy the example environment file:
+3. **Environment Configuration**
+    - Create a `.env` file in the project root:
 ``` 
-     cp .env.example .env
+     touch .env
 ```
-- Edit the file and add your API keys: `.env`
+    - Edit the file and add your API keys:
 ``` 
      OPENAI_API_KEY=your_openai_api_key_here
+     GOOGLE_TTS_API_KEY=your_google_tts_api_key_here
      YOUTUBE_STREAM_KEY=your_youtube_stream_key_here
+     YOUTUBE_API_KEY=your_youtube_api_key_here
 ```
-1. **Station Configuration**
-    - Edit to customize your radio station: `station.json`
+4. **Station Configuration**
+    - The default configuration is in `config/default.json`
+    - You can customize this file or create a new one in the config directory
+    - Example configuration:
 ``` json
      {
        "stationName": "Your Station Name",
@@ -113,13 +145,70 @@ citizen-radio/
      }
 ```
 - See the Configuration section below for detailed options
-    1. **Add Content**
-        - Place MP3 files in the appropriate directories `ready/`
-        - Add image files to for stream visualization `ready/image/`
-    2. **Or copy Example Content**
-        - `bash cp -r example/*`
-        - This will copy the necessary example files to the main directory, giving you everything you need to test it out right away.
-    3. **Start the Station**
+
+5. **YouTube Stream Setup**
+    - To stream to YouTube, you need to set up a live stream in YouTube Studio:
+        1. Go to [YouTube Studio](https://studio.youtube.com/)
+        2. Click on "Create" in the top-right corner and select "Go live"
+        3. If this is your first time, you may need to verify your account and wait 24 hours
+        4. Select "Stream" option (not "Webcam")
+        5. Fill in the basic details for your stream (title, description, etc.)
+        6. Make note of or copy the following important details:
+            - **Stream Key**: Found under the "Stream settings" section
+            - **Video ID**: This is the part of the stream URL after `v=` (e.g., for `https://youtube.com/watch?v=abcdefghijk`, the Video ID is `abcdefghijk`)
+        7. Click "Create Stream" to save your settings
+
+    - Add these details to your configuration:
+        - Add the Stream Key to your `.env` file:
+        ```
+        YOUTUBE_STREAM_KEY=your_youtube_stream_key_here
+        ```
+        - Add the Video ID to your `config/default.json` file:
+        ```json
+        "youtube": {
+          "videoId": "your_video_id_here"
+        }
+        ```
+        - Alternatively, you can provide these as command line arguments when starting the station:
+        ```
+        npm start -- --youtube-stream-key=your_stream_key --youtube-video-id=your_video_id
+        ```
+
+        - For convenience, you can also specify the video ID directly as the first argument:
+        ```
+        npm start your_video_id
+        ```
+
+        - Or using the shorter flag:
+        ```
+        npm start -video your_video_id
+        ```
+
+        - If no video ID is provided, the system will attempt to automatically find the most recent live stream using the YouTube API (requires YOUTUBE_API_KEY to be set in your .env file)
+
+    - For live feedback and user ratings:
+        1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+        2. Create a new project or select an existing one
+        3. Enable the YouTube Data API v3
+        4. Create an API key
+        5. Add the API key to your `.env` file:
+        ```
+        YOUTUBE_API_KEY=your_youtube_api_key_here
+        ```
+
+6. **Add Content**
+    - Place MP3 files in the appropriate directories `data/ready/`
+    - Add image files for stream visualization in `data/ready/image/`
+
+7. **Or Use Example Content**
+    - The project includes example content in the `example/` directory
+    - You can copy it to the data directory:
+    ```
+    cp -r example/* data/
+    ```
+    - This will copy the necessary example files, giving you everything you need to test it out right away.
+
+8. **Start the Station**
           - Basic start:
         ``` 
              npm start
@@ -128,8 +217,11 @@ citizen-radio/
         ``` 
              npm start --uptime 4
         ```
+        - Keyboard shortcuts while running:
+          - `Ctrl+C`: Immediately stop the station
+          - `Ctrl+X`: Stop the station after the current music track
 ## Configuration Options
-### Station Configuration () `station.json`
+### Station Configuration (`config/default.json`)
 #### Basic Settings
 - `stationName`: Name of your radio station
 - `djName`: Name of the main DJ persona
@@ -163,25 +255,44 @@ citizen-radio/
 #### Scheduling
 - : Array defining the content rotation pattern `schedule.defaultPattern`
 
+#### Rating System
+- `ratingSystem.enabled`: Enable or disable the rating system
+- `ratingSystem.defaultRating`: Default rating for tracks without ratings
+- `ratingSystem.minTickets`: Minimum number of rating tickets
+- `ratingSystem.maxTickets`: Maximum number of rating tickets
+- `ratingSystem.ratingPersistence`: Whether to persist ratings between sessions
+- `ratingSystem.displayOnStream`: Whether to display ratings on the stream
+- `ratingSystem.streamDelay`: Delay in seconds before displaying ratings
+
+#### YouTube Streaming
+- `youtube.rtmpUrl`: RTMP URL for YouTube streaming
+- `youtube.videoId`: YouTube video ID for the live stream
+- `youtube.updateMetadata`: Whether to update stream metadata periodically
+- `youtube.createAutomatically`: Whether to create a new stream automatically
+
 ### Command Line Arguments
-The following command line arguments can override settings in : `station.json`
-- : Set the station's running time in hours (e.g., for 4 hours) `--uptime <hours>``--uptime 4`
-- : Set the uptime mode:
+The following command line arguments can override settings in the configuration file:
+
+- `<video_id>`: Specify the YouTube video ID as the first argument (e.g., `npm start 7stobQGa1`)
+- `-video <video_id>` or `--video <video_id>`: Specify the YouTube video ID (e.g., `npm start -video 7stobQGa1`)
+- `--uptime <hours>`: Set the station's running time in hours (e.g., `--uptime 4` for 4 hours)
+- `--uptime-mode <mode>`: Set the uptime mode:
     - `track`: Station will stop after the specified number of hours
     - `cycle`: Station will complete its current content cycle before stopping
+- `--debug`: Enable debug mode (keeps temporary files and provides more verbose logging)
 
-`--uptime-mode <mode>`
+If no video ID is provided, the system will attempt to automatically find the most recent live stream using the YouTube API (requires YOUTUBE_API_KEY to be set in your .env file).
 
 ## Content Generation
 ### Adding Text Prompts
-The system automatically monitors the directories for new text files to process: `prompts/`
+The system automatically monitors the directories for new text files to process: `data/prompts/`
 1. **Create a Text Prompt File**:
     - Create a file in the appropriate prompt folder:
-        - - For DJ talk segments `prompts/dj/`
-        - - For advertisements `prompts/ads/`
-        - - For station IDs and transitions `prompts/intros/`
-        - - For podcast episodes `prompts/podcast/`
-        - - For generating station artwork `prompts/images/`
+        - - For DJ talk segments `data/prompts/dj/`
+        - - For advertisements `data/prompts/ads/`
+        - - For station IDs and transitions `data/prompts/intros/`
+        - - For podcast episodes `data/prompts/podcast/`
+        - - For generating station artwork `data/prompts/images/`
 
 `.txt`
 
@@ -194,7 +305,7 @@ The system automatically monitors the directories for new text files to process:
     - The system will automatically detect new text files using Chokidar
     - AI will expand your basic prompt into fully-formed content
     - Text will be converted to speech using the appropriate voice profile
-    - Resulting audio will be placed in the corresponding directory `ready/`
+    - Resulting audio will be placed in the corresponding directory `data/ready/`
 
 ### Podcast Generation
 Podcasts can be defined in multiple formats. Here are some examples:
@@ -245,6 +356,53 @@ The system automatically:
 - Generates natural conversation between all participants
 
 For more control, create a file with the same base name as your prompt to customize parameters like episode length, style, and other settings. `.cfg.json`
+## Testing
+The project includes a comprehensive testing infrastructure with different types of tests:
+
+### Running Tests
+To run all tests:
+```
+npm test
+```
+
+To run specific test types:
+```
+npm run test:unit        # Run unit tests
+npm run test:integration # Run integration tests
+npm run test:e2e         # Run end-to-end tests
+npm run test:performance # Run performance tests
+```
+
+### Test Coverage
+To generate a test coverage report:
+```
+npm run test:coverage
+```
+
+### Test Types
+1. **Unit Tests**: Test individual components in isolation
+   - Located in `tests/unit/`
+   - Cover core components, managers, processors, and utilities
+
+2. **Integration Tests**: Test interactions between components
+   - Located in `tests/integration/`
+   - Cover content generation pipeline and streaming pipeline
+
+3. **End-to-End Tests**: Test complete workflows
+   - Located in `tests/e2e/`
+   - Cover broadcast cycles, content variety, rating collection, and error recovery
+
+4. **Performance Tests**: Test system performance
+   - Located in `tests/performance/`
+   - Cover memory usage, CPU usage, resource cleanup, and long-running stability
+
+### Test Fixtures
+Sample data for tests is located in `tests/fixtures/`:
+- Sample audio files
+- Sample station configurations
+- Sample YouTube comments
+- Sample AI responses
+
 ## Developer Workflow
 For developers looking to extend or modify the system:
 1. **Development Environment Setup**
@@ -252,16 +410,28 @@ For developers looking to extend or modify the system:
     - Create a local file with API keys `.env`
 
 2. **Testing Changes**
-    - Use `streamMode: "local"` in station.json for local testing
+    - Use `streamMode: "local"` in config/default.json for local testing
     - Test prompt processing with sample files in each prompt directory
-    - Debug module interactions by enabling `debug: true` in station.json
+    - Debug module interactions by enabling `debug: true` in config/default.json
+    - Run unit tests for components you modify (see Testing section)
 
 3. **Adding New Features**
     - The modular architecture allows for adding new content types
-    - Extend the scheduling pattern in station.json to include new types
+    - Extend the scheduling pattern in config/default.json to include new types
     - Create new processor modules following the existing patterns
+    - Add tests for new functionality
 
 4. **Troubleshooting**
-    - Check the directory for intermediate files when debug mode is enabled `/temp`
+    - Check the `data/temp` directory for intermediate files when debug mode is enabled
     - Monitor console output for process and API interaction logs
     - Review play.log for content scheduling history
+    - Check test failures for clues about issues
+    - Use the `--debug` flag when running the application for more verbose logging
+
+    **Streaming Issues**
+    - If you encounter streaming pipeline failures, the application will attempt to automatically recover
+    - Check for "Pipe error detected" or "Broken pipe" messages in the logs
+    - If recovery fails, try restarting the application
+    - Ensure that no other processes are using the FIFO pipe at `/tmp/audio_buffer.fifo`
+    - Check that FFmpeg is installed and working correctly
+    - If streaming issues persist, try running `pkill -f ffmpeg` to kill any lingering FFmpeg processes before starting the application

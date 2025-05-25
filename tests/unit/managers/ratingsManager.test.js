@@ -57,23 +57,26 @@ describe('Ratings Manager', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    
+
     // Setup default mocks
     path.join.mockImplementation((...args) => args.join('/'));
-    
+
     // Mock fs
     fs.existsSync.mockReturnValue(true);
     fs.readFileSync.mockReturnValue(JSON.stringify(sampleRatings));
     fs.writeFileSync.mockImplementation(() => {});
-    
+
     // Mock utils
     utils.readLiveChat.mockResolvedValue([]);
-    
+
     // Reset date
     jest.spyOn(global, 'Date').mockImplementation(() => ({
       toISOString: () => '2023-05-25T12:00:00.000Z',
       getTime: () => 1684929600000 // 2023-05-25T12:00:00.000Z
     }));
+
+    // Mock Date.now
+    Date.now = jest.fn().mockReturnValue(1684929600000); // 2023-05-25T12:00:00.000Z
   });
 
   afterEach(() => {
@@ -82,7 +85,7 @@ describe('Ratings Manager', () => {
 
   test('should load ratings from file', () => {
     const ratings = ratingsManager.loadRatings();
-    
+
     expect(fs.existsSync).toHaveBeenCalledWith(expect.stringContaining('data/ratings.json'));
     expect(fs.readFileSync).toHaveBeenCalledWith(expect.stringContaining('data/ratings.json'), 'utf8');
     expect(ratings).toEqual(sampleRatings);
@@ -92,9 +95,9 @@ describe('Ratings Manager', () => {
     fs.readFileSync.mockImplementation(() => {
       throw new Error('Read error');
     });
-    
+
     const ratings = ratingsManager.loadRatings();
-    
+
     expect(mockConsoleError).toHaveBeenCalledWith(
       'Error loading ratings:',
       expect.any(Error)
@@ -104,7 +107,7 @@ describe('Ratings Manager', () => {
 
   test('should save ratings to file', () => {
     const success = ratingsManager.saveRatings(sampleRatings);
-    
+
     expect(fs.writeFileSync).toHaveBeenCalledWith(
       expect.stringContaining('data/ratings.json'),
       JSON.stringify(sampleRatings, null, 2)
@@ -116,9 +119,9 @@ describe('Ratings Manager', () => {
     fs.writeFileSync.mockImplementation(() => {
       throw new Error('Write error');
     });
-    
+
     const success = ratingsManager.saveRatings(sampleRatings);
-    
+
     expect(mockConsoleError).toHaveBeenCalledWith(
       'Error saving ratings:',
       expect.any(Error)
@@ -136,9 +139,9 @@ describe('Ratings Manager', () => {
         displayName: 'TestUser'
       }
     };
-    
+
     const rating = ratingsManager.parseRatingFromComment(comment);
-    
+
     expect(rating).toEqual({
       value: 4,
       timestamp: '2023-05-25T12:00:00.000Z',
@@ -157,9 +160,9 @@ describe('Ratings Manager', () => {
         displayName: 'TestUser'
       }
     };
-    
+
     const rating = ratingsManager.parseRatingFromComment(comment);
-    
+
     expect(rating).toBeNull();
   });
 
@@ -171,19 +174,19 @@ describe('Ratings Manager', () => {
       artist: 'Test Artist',
       type: 'music'
     });
-    
+
     // Open comment window
     ratingsManager.openCommentWindow();
-    
+
     const rating = {
       value: 5,
       timestamp: '2023-05-25T12:00:00.000Z',
       author: 'TestUser',
       comment: 'Love this! ❤️'
     };
-    
+
     const match = ratingsManager.matchRatingToTrack(rating);
-    
+
     expect(match).toEqual({
       track: 'data/ready/music/track1.mp3',
       rating
@@ -193,16 +196,16 @@ describe('Ratings Manager', () => {
   test('should not match rating if no track is playing', () => {
     // Reset currently playing track
     ratingsManager.setCurrentlyPlaying(null);
-    
+
     const rating = {
       value: 5,
       timestamp: '2023-05-25T12:00:00.000Z',
       author: 'TestUser',
       comment: 'Love this! ❤️'
     };
-    
+
     const match = ratingsManager.matchRatingToTrack(rating);
-    
+
     expect(match).toBeNull();
   });
 
@@ -214,9 +217,9 @@ describe('Ratings Manager', () => {
       author: 'TestUser',
       comment: 'Love this! ❤️'
     };
-    
+
     ratingsManager.updateTrackRating(trackPath, ratingData);
-    
+
     // Check that saveRatings was called with updated ratings
     expect(fs.writeFileSync).toHaveBeenCalled();
     const savedRatings = JSON.parse(fs.writeFileSync.mock.calls[0][1]);
@@ -234,9 +237,9 @@ describe('Ratings Manager', () => {
       author: 'TestUser3',
       comment: 'It\'s okay 🫳'
     };
-    
+
     ratingsManager.updateTrackRating(trackPath, ratingData);
-    
+
     // Check that saveRatings was called with updated ratings
     expect(fs.writeFileSync).toHaveBeenCalled();
     const savedRatings = JSON.parse(fs.writeFileSync.mock.calls[0][1]);
@@ -258,7 +261,7 @@ describe('Ratings Manager', () => {
   test('should open and close comment window', () => {
     const startTime = ratingsManager.openCommentWindow();
     expect(startTime).toBe('2023-05-25T12:00:00.000Z');
-    
+
     const endTime = ratingsManager.closeCommentWindow();
     expect(endTime).toBe('2023-05-25T12:00:00.000Z');
   });
@@ -271,11 +274,11 @@ describe('Ratings Manager', () => {
       artist: 'Test Artist',
       type: 'music'
     });
-    
+
     // Open and close comment window
     ratingsManager.openCommentWindow();
     ratingsManager.closeCommentWindow();
-    
+
     // Mock chat messages
     utils.readLiveChat.mockResolvedValue([
       {
@@ -306,9 +309,9 @@ describe('Ratings Manager', () => {
         }
       }
     ]);
-    
+
     const count = await ratingsManager.pollForComments('test-video-id');
-    
+
     expect(count).toBe(2); // Two valid ratings processed
     expect(utils.readLiveChat).toHaveBeenCalledWith('test-video-id');
     expect(fs.writeFileSync).toHaveBeenCalled();
@@ -317,7 +320,7 @@ describe('Ratings Manager', () => {
   test('should get rating for track', () => {
     const rating = ratingsManager.getRatingForTrack('data/ready/music/track1.mp3');
     expect(rating).toBe(4.5);
-    
+
     const nonExistentRating = ratingsManager.getRatingForTrack('data/ready/music/non-existent.mp3');
     expect(nonExistentRating).toBeNull();
   });

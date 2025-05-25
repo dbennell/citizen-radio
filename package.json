@@ -11,6 +11,8 @@
     "test:integration": "jest tests/integration",
     "test:e2e": "jest tests/e2e",
     "test:performance": "jest tests/performance",
+    "test:api": "jest tests/integration/api",
+    "test:basic": "jest tests/unit tests/integration/components",
     "start": "node src/core/main.js",
     "start:4h": "node src/core/main.js --uptime 4",
     "start:debug": "node src/core/main.js --debug",

@@ -64,8 +64,15 @@ let cliVideoId = null;
 let cliUptimeHours = null;
 let cliUptimeMode = null;
 
+// Check if the first argument is a video ID (not starting with --)
+if (args.length > 0 && !args[0].startsWith('--')) {
+    cliVideoId = args[0];
+    // Remove the first argument so it doesn't interfere with other argument parsing
+    args.shift();
+}
+
 for (let i = 0; i < args.length; i++) {
-    if (args[i] === "--video" && args[i + 1]) {
+    if ((args[i] === "--video" || args[i] === "-video") && args[i + 1]) {
         cliVideoId = args[i + 1];
     }
     if (args[i] === "--uptime" && args[i + 1] !== undefined) {
@@ -79,9 +86,12 @@ for (let i = 0; i < args.length; i++) {
 }
 
 // Resolve videoId using CLI, .env, or station.json
+// We'll set it to null initially if not provided, and fetch it later if needed
 STATION_CONFIG.youtube = {
-    ...STATION_CONFIG.youtube,
-    videoId: cliVideoId || process.env.YOUTUBE_VIDEO_ID || STATION_CONFIG.youtube?.videoId || null
+    ...(STATION_CONFIG.youtube || {}),
+    videoId: cliVideoId || process.env.YOUTUBE_VIDEO_ID || STATION_CONFIG.youtube?.videoId || null,
+    // Flag to indicate if we should try to fetch the video ID if not provided
+    shouldFetchVideoId: !cliVideoId && !process.env.YOUTUBE_VIDEO_ID && !STATION_CONFIG.youtube?.videoId
 };
 
 if (cliUptimeHours !== null) {

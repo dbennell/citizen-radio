@@ -87,10 +87,39 @@ async function updateOverlay(trackPath, videoId) {
 
     // 5) Write out the PNG
     return new Promise((resolve, reject) => {
-        const out = fs.createWriteStream('/tmp/overlay.png');
+        // Write to a temporary file first
+        const tempFile = '/tmp/overlay_temp.png';
+        const out = fs.createWriteStream(tempFile);
+
         canvas.createPNGStream().pipe(out);
-        out.on('finish', resolve);
-        out.on('error', reject);
+
+        out.on('finish', () => {
+            try {
+                // Atomically replace the overlay file
+                fs.renameSync(tempFile, '/tmp/overlay.png');
+
+                // Update the symbolic link if it exists
+                if (fs.existsSync('/tmp/current_overlay.png')) {
+                    // The symbolic link should already be pointing to /tmp/overlay.png
+                    // No need to update it, just ensure the target file is updated
+                    console.log('🖼️ Updated overlay image');
+                } else {
+                    // If the symlink doesn't exist for some reason, create it
+                    fs.symlinkSync('/tmp/overlay.png', '/tmp/current_overlay.png');
+                    console.log('🖼️ Created new symbolic link to overlay image');
+                }
+
+                resolve();
+            } catch (err) {
+                console.error('❌ Error updating overlay:', err);
+                reject(err);
+            }
+        });
+
+        out.on('error', (err) => {
+            console.error('❌ Error writing overlay:', err);
+            reject(err);
+        });
     });
 }
 
@@ -175,14 +204,22 @@ async function playbackLoop() {
                     const segFile = await prepareSegway(text, prevSegMeta, nextSegMeta, `${prevSegMeta.type}_to_${nextSegMeta.type}`);
                     if (!segFile) continue;
 
-                    if (STATION_CONFIG.streamMode === 'youtube') {
-                        await streamFile(segFile);
-                    } else {
-                        await playFile(segFile);
+                    try {
+                        if (STATION_CONFIG.streamMode === 'youtube') {
+                            await streamFile(segFile);
+                        } else {
+                            await playFile(segFile);
+                        }
+                        // Only delete the file after successful playback
+                        if (fs.existsSync(segFile)) {
+                            fs.unlinkSync(segFile);
+                        }
+                    } catch (playErr) {
+                        console.error('Error playing segway:', playErr);
+                        // Don't delete the file if playback failed
                     }
-                    fs.unlinkSync(segFile);
                 } catch (err) {
-                    console.error('Segway error:', err);
+                    console.error('Segway generation error:', err);
                 }
                 continue;
             }
@@ -207,22 +244,42 @@ async function playbackLoop() {
                     console.log(`📊 Rating: tracking "${entry.meta.title}" from ${windowStart}`);
                 }
 
-                if (STATION_CONFIG.streamMode === 'youtube') {
-                    await updateOverlay(entry.filepath, vid);
-                    await streamFile(entry.filepath);
-                } else {
-                    await playFile(entry.filepath);
-                }
+                try {
+                    if (STATION_CONFIG.streamMode === 'youtube') {
+                        await updateOverlay(entry.filepath, vid);
+                        await streamFile(entry.filepath);
+                    } else {
+                        await playFile(entry.filepath);
+                    }
 
-                if (type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
-                    const windowEnd = ratingManager.closeCommentWindow();
-                    const count = await ratingManager.pollForComments(vid);
-                    console.log(`📊 Collected ${count} comment${count===1?'':'s'} up to ${windowEnd}`);
-                }
+                    // Only log the play if streaming was successful
+                    appendPlayLog(trackRel, type, entry.meta);
 
-                appendPlayLog(trackRel, type, entry.meta);
+                    if (type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
+                        const windowEnd = ratingManager.closeCommentWindow();
+                        const count = await ratingManager.pollForComments(vid);
+                        console.log(`📊 Collected ${count} comment${count===1?'':'s'} up to ${windowEnd}`);
+                    }
+                } catch (playErr) {
+                    console.error(`Error streaming ${type} "${entry.meta.title}":`, playErr);
+
+                    // If we're in YouTube mode, try to recover the streaming pipeline
+                    if (STATION_CONFIG.streamMode === 'youtube') {
+                        try {
+                            console.log('🔄 Attempting to recover streaming pipeline...');
+                            const { recoverStreamingPipeline } = require('./streamer');
+                            await recoverStreamingPipeline();
+                            console.log('✅ Streaming pipeline recovery complete, continuing playback');
+                        } catch (recoverErr) {
+                            console.error('❌ Failed to recover streaming pipeline:', recoverErr);
+                            // Add a delay before continuing to avoid rapid failure loops
+                            console.log('⏱️ Waiting before continuing playback...');
+                            await new Promise(resolve => setTimeout(resolve, 5000));
+                        }
+                    }
+                }
             } catch (err) {
-                console.error(`Error playing ${type}:`, err);
+                console.error(`Error preparing ${type} for playback:`, err);
             }
 
             if (stopAfterNextMusic && type === 'music') {
