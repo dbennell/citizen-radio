@@ -6,6 +6,8 @@ const path = require('path');
 const { getPlayCount, getLastPlays } = require('./playLogManager');
 const { extractMetadata }            = require('./utils');
 const { STATION_CONFIG, READY_DIR }  = require('./config');
+const ratingManager = require('./ratingsManager');
+
 
 /**
  * Helper – get the absolute path inside the ready/ tree.
@@ -77,11 +79,18 @@ async function pickNextTrack(type) {
         candidates = available.slice(0, half);
     }
 
-    // 8) random pick
-    const choice = candidates[Math.floor(Math.random() * candidates.length)];
+    // 8) Use the weighted selection if rating system is enabled and this is music
+    let choice;
+    if (type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
+        choice = performWeightedSelection(candidates);
+    } else {
+        // Otherwise use random selection
+        choice = candidates[Math.floor(Math.random() * candidates.length)];
+    }
 
     const meta = extractMetadata(choice.fp);
-    meta.type  = type;
+    meta.type = type;
+    meta.relPath = choice.rel; // Add relPath to metadata for rating lookup
 
     return { filepath: choice.fp, meta };
 }
@@ -108,7 +117,48 @@ function cleanupSegways() {
     }
 }
 
+/**
+ * Performs weighted selection from a list of candidate tracks
+ * @param {Array} candidates - List of candidate tracks
+ * @returns {Object} - Selected track
+ */
+function performWeightedSelection(candidates) {
+    if (!STATION_CONFIG.ratingSystem?.enabled) {
+        // Fall back to random selection if rating system is disabled
+        return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    // Map candidates with their ratings and ticket counts
+    const candidatesWithRatings = candidates.map(candidate => {
+        const rating = ratingManager.getRatingForTrack(candidate.rel) ||
+            STATION_CONFIG.ratingSystem.defaultRating;
+        return {
+            ...candidate,
+            rating,
+            tickets: ratingManager.getTicketsForTrack(rating)
+        };
+    });
+
+    // Build the raffle pool
+    const rafflePool = [];
+    for (const candidate of candidatesWithRatings) {
+        for (let i = 0; i < candidate.tickets; i++) {
+            rafflePool.push(candidate);
+        }
+    }
+
+    // If raffle pool is empty (shouldn't happen), fall back to random
+    if (rafflePool.length === 0) {
+        return candidates[Math.floor(Math.random() * candidates.length)];
+    }
+
+    // Draw a random ticket from the pool
+    return rafflePool[Math.floor(Math.random() * rafflePool.length)];
+}
+
+
 module.exports = {
     pickNextTrack,
     cleanupSegways,
+    performWeightedSelection
 };

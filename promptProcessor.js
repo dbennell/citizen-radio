@@ -16,6 +16,7 @@ const chokidar = require("chokidar");
 const OpenAI = require("openai");
 const textToSpeech = require("@google-cloud/text-to-speech");
 const tracksManager  = require("./trackManager");
+const ratingManager = require('./ratingsManager');
 
 const { PROMPT_DIRS, READY_DIR, STATION_CONFIG } = require("./config");
 
@@ -346,6 +347,31 @@ async function generateSegway(prevMeta, nextMeta) {
         const nextType = nextMeta?.type || "upcoming content";
         const includeFunny = Math.random() < (STATION_CONFIG.segwayFunny || 0);
 
+        let prevRatingInfo = "";
+        let nextRatingInfo = "";
+
+        if (STATION_CONFIG.ratingSystem?.enabled) {
+            if (prevMeta.type === 'music' && prevMeta.relPath) {
+                const rating = ratingManager.getRatingForTrack(prevMeta.relPath);
+                if (rating) {
+                    prevRatingInfo = `This track has a listener rating of ${rating.toFixed(1)}/5.`;
+                }
+            }
+
+            if (nextMeta.type === 'music' && nextMeta.relPath) {
+                const rating = ratingManager.getRatingForTrack(nextMeta.relPath);
+                if (rating) {
+                    nextRatingInfo = `The upcoming track has a listener rating of ${rating.toFixed(1)}/5.`;
+
+                    // For highly rated tracks, suggest special introduction
+                    if (rating >= 4.5) {
+                        nextRatingInfo += " It's a fan favorite, so consider giving it a special introduction!";
+                    }
+                }
+            }
+        }
+
+
         // 1) No previous track at all?  →  simple intro
         if (prevType === 'start' || prevTitle === '') {
             return `Up next, ${nextTitle}${ nextMeta.artist ? ` by ${nextMeta.artist}` : '' }.`;
@@ -420,6 +446,7 @@ async function generateSegway(prevMeta, nextMeta) {
                 ${prevMeta?.album ? `- Album: ${prevMeta.album}` : ''}
                 ${prevMeta?.genre ? `- Genre: ${prevMeta.genre}` : ''}
                 ${prevMeta?.comment ? `- Note: ${prevMeta.comment}` : ''}
+                ${prevRatingInfo}
                 
                 Next song:
                 - Title: "${nextTitle}"
@@ -427,6 +454,7 @@ async function generateSegway(prevMeta, nextMeta) {
                 ${nextMeta?.album ? `- Album: ${nextMeta.album}` : ''}
                 ${nextMeta?.genre ? `- Genre: ${nextMeta.genre}` : ''}
                 ${nextMeta?.comment ? `- Note: ${nextMeta.comment}` : ''}
+                ${nextRatingInfo}
                 
                 Task:
                 Create a short, natural DJ-style transition from the previous track to the next.

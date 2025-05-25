@@ -29,6 +29,16 @@ const READY_DIR = type => path.join(BASE_DIR, `ready/${type}`);
 const PLAYED_DIR = type => path.join(BASE_DIR, `played/${type}`);
 const STATION_CONFIG = loadStationConfig();
 
+
+// Handle YouTube API settings from environment
+if (process.env.YOUTUBE_API_KEY && process.env.YOUTUBE_VIDEO_ID) {
+    if (!STATION_CONFIG.youtube) {
+        STATION_CONFIG.youtube = {};
+    }
+    // We don't add these to STATION_CONFIG to avoid accidentally committing them
+    // But we do indicate they're available with a flag
+    STATION_CONFIG.youtube.apiAvailable = true;
+}
 // Override YouTube stream key with environment variable if available
 if (process.env.YOUTUBE_STREAM_KEY) {
     if (!STATION_CONFIG.youtube) {
@@ -38,14 +48,26 @@ if (process.env.YOUTUBE_STREAM_KEY) {
     }
     STATION_CONFIG.youtube.streamKey = process.env.YOUTUBE_STREAM_KEY;
 }
+// Add this near the YouTube stream key handling section
+if (process.env.YOUTUBE_CLIENT_ID && process.env.YOUTUBE_CLIENT_SECRET && process.env.YOUTUBE_ACCESS_TOKEN) {
+    if (!STATION_CONFIG.youtube) {
+        STATION_CONFIG.youtube = {
+            rtmpUrl: "rtmp://a.rtmp.youtube.com/live2"
+        };
+    }
+    STATION_CONFIG.youtube.oauthAvailable = true;
+}
 
-
-// --- new CLI‐override logic for uptime ----------------
+// Handle CLI arguments
 const args = process.argv.slice(2);
+let cliVideoId = null;
 let cliUptimeHours = null;
 let cliUptimeMode = null;
 
 for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--video" && args[i + 1]) {
+        cliVideoId = args[i + 1];
+    }
     if (args[i] === "--uptime" && args[i + 1] !== undefined) {
         const v = parseFloat(args[i + 1]);
         if (!isNaN(v) && v >= 0) cliUptimeHours = v;
@@ -55,6 +77,12 @@ for (let i = 0; i < args.length; i++) {
         if (m === "cycle" || m === "track") cliUptimeMode = m;
     }
 }
+
+// Resolve videoId using CLI, .env, or station.json
+STATION_CONFIG.youtube = {
+    ...STATION_CONFIG.youtube,
+    videoId: cliVideoId || process.env.YOUTUBE_VIDEO_ID || STATION_CONFIG.youtube?.videoId || null
+};
 
 if (cliUptimeHours !== null) {
     STATION_CONFIG.uptimeHours = cliUptimeHours;
@@ -67,6 +95,8 @@ if (cliUptimeMode) {
 } else if (STATION_CONFIG.uptimeMode === undefined) {
     STATION_CONFIG.uptimeMode = "cycle";
 }
+
+
 // -------------------------------------------------------
 
 module.exports = { PROMPT_DIRS, READY_DIR, PLAYED_DIR, STATION_CONFIG };

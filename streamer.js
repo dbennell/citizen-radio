@@ -1,10 +1,10 @@
 // ========================
-// File: streamer.js
+// File: streamer.js (restored and refined)
 // ========================
-const fs    = require('fs');
-const path  = require('path');
-const { spawnTrackedProcess, extractMetadata } = require('./utils');
-const { STATION_CONFIG, READY_DIR }           = require('./config');
+const fs = require("fs");
+const path = require("path");
+const { spawnTrackedProcess } = require("./utils");
+const { STATION_CONFIG, READY_DIR } = require("./config");
 
 let ffmpegStdin;
 let youtubeProc;
@@ -14,154 +14,299 @@ let lastRotation;
  * Expose the current ffmpeg stdin (for cleanup)
  */
 function getFfmpegStdin() {
-    return ffmpegStdin;
+  return ffmpegStdin;
 }
 
 /**
- * Pick a random cover image from ready/image
+ * Pick a random cover image from the ready/image directory
  */
 function getRandomCoverImage() {
-    const imgDir = READY_DIR('image');
-    const files = fs.readdirSync(imgDir)
-        .filter(f => /\.(png|jpe?g)$/i.test(f))
-        .map(f => path.join(imgDir, f));
+  const imgDir = READY_DIR("image");
+  const files = fs
+    .readdirSync(imgDir)
+    .filter((f) => /\.(png|jpe?g)$/i.test(f))
+    .map((f) => path.join(imgDir, f));
 
-    if (!files.length) {
-        throw new Error(`No images found in ${imgDir}`);
-    }
+  if (!files.length) {
+    throw new Error(`No images found in ${imgDir}`);
+  }
 
-    return files[Math.floor(Math.random() * files.length)];
+  return files[Math.floor(Math.random() * files.length)];
 }
 
 /**
- * Start the two‐process FFmpeg chain that streams to YouTube
+ * Start the two-process FFmpeg chain that streams to YouTube
  */
 function startYouTubeStreamer() {
+  try {
+    console.log(
+      "🎥 Stream mode is set to YouTube. Initializing YouTube streamer...",
+    );
     const cover = getRandomCoverImage();
-    console.log('▶️ Starting YouTube FFmpeg with cover →', cover);
+    console.log("🖼️ Using cover image:", cover);
+
+      // ─── seed initial overlay.png so ffmpeg will find it ───
+          try {
+        fs.copyFileSync(cover, "/tmp/overlay.png");
+        console.log("✅ Initial overlay written to /tmp/overlay.png");
+      } catch (err) {
+        console.warn("⚠️ Could not seed initial overlay:", err);
+      }
 
     const { rtmpUrl, streamKey } = STATION_CONFIG.youtube;
-    const fifoPath = '/tmp/audio_buffer.fifo';
 
-    // ensure fifo exists
-    if (!fs.existsSync(fifoPath)) {
-        require('child_process').execSync(`mkfifo ${fifoPath}`);
+    if (!streamKey) {
+      throw new Error(
+        "❌ No YouTube stream key found. Set it in station.json or .env",
+      );
     }
 
-    // 1) audio buffer
+    const fifoPath = "/tmp/audio_buffer.fifo";
+
+    // Ensure FIFO exists
+    if (!fs.existsSync(fifoPath)) {
+      console.log("🛠️ Creating FIFO file:", fifoPath);
+      try {
+        execSync(`mkfifo ${fifoPath}`);
+        console.log("✅ FIFO created successfully:", fifoPath);
+      } catch (error) {
+        console.error("🚨 Failed to create FIFO:", error);
+        throw new Error("Failed to create FIFO.");
+      }
+    } else {
+      console.log("🔄 FIFO already exists:", fifoPath);
+    }
+
+    // TODO: set the loglevel based on if we are in debug or not
+    // Start the audio buffer process
     const audioBuffer = spawnTrackedProcess(
-        '/usr/bin/ffmpeg',
-        [
-            '-hide_banner','-loglevel','warning',
-            '-y',
-            '-f','s16le','-ar','44100','-ac','2','-i','pipe:0',
-            '-c:a','pcm_s16le','-f','s16le', fifoPath
-        ],
-        { stdio: ['pipe','inherit','inherit'] }
+      "/usr/bin/ffmpeg",
+      [
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-y",
+        "-f",
+        "s16le",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "-i",
+        "pipe:0",
+        "-c:a",
+        "pcm_s16le",
+        "-f",
+        "s16le",
+        fifoPath,
+      ],
+      { stdio: ["pipe", "inherit", "inherit"] },
     );
 
-    // 2) streamer
-    const youtubeStreamer = spawnTrackedProcess(
-        '/usr/bin/ffmpeg',
-        [
-            '-hide_banner','-loglevel','warning',
-            // throttle the video feed in real-time
-            '-re','-f','lavfi','-i','color=c=black:s=1280x720:r=5,format=yuv420p',
-            '-loop','1','-framerate','5','-i', cover,
-            // null-audio to keep FFmpeg happy when no music is playing
-            '-f','lavfi','-i','anullsrc=channel_layout=stereo:sample_rate=44100',
-            // throttle the raw audio FIFO in real-time
-            '-re','-f','s16le','-ar','44100','-ac','2','-i', fifoPath,
-            '-filter_complex',
-            '[0:v][1:v]overlay=x=(W-w)/2:y=(H-h)/2,format=yuv420p[v];' +
-            '[2:a][3:a]amix=inputs=2:duration=first:dropout_transition=2[aout]',
-            '-map','[v]','-map','[aout]',
-            '-c:v','libx264','-preset','veryfast','-tune','zerolatency','-g','60',
-            '-pix_fmt','yuv420p','-b:v','2500k','-maxrate','2500k','-bufsize','5000k',
-            '-c:a','aac','-b:a','192k','-ar','44100','-ac','2',
-            // drop wallclock timestamps and let FFmpeg sync inputs by their own PTS
-            '-r','5','-fps_mode','cfr',
-            '-max_muxing_queue_size','9999',
-            '-f','flv', `${rtmpUrl}/${streamKey}`
-        ],
-        { stdio: ['ignore','inherit','inherit'] }
-    );
+    audioBuffer.on("close", () => {
+      console.warn("Audio buffer process exited unexpectedly.");
+    });
 
-    // wire up
+    audioBuffer.on("error", (err) => {
+      console.error("🚨 Error in audio buffer process:", err);
+    });
+
+    console.log("🎵 Audio buffer FFmpeg process started.");
+
+      // TODO: set the loglevel based on if we are in debug or not
+      const youtubeStreamer = spawnTrackedProcess(
+          "/usr/bin/ffmpeg",
+          [
+              "-hide_banner",
+              "-loglevel", "warning",
+
+              // ───────── Video ─────────
+              "-re",                      // read at realtime
+              "-f", "image2",             // use image demuxer
+              "-framerate", "30",         // input at 30 fps
+              "-loop", "1",               // loop the single image
+              "-i", "/tmp/overlay.png",
+
+              // ───────── Buffering ─────────
+              "-thread_queue_size", "1024", // bigger buffer on next input
+
+              // ───────── Audio ─────────
+              "-re",
+              "-f", "s16le",
+              "-ar", "44100",
+              "-ac", "2",
+              "-i", fifoPath,
+
+              // ───────── Encoders & Filters ─────────
+              "-vf", "scale=1280:720,format=yuv420p",
+              "-r", "30",
+              "-c:v", "libx264",
+              "-preset", "veryfast",
+              "-tune", "zerolatency",
+              "-g", "60",
+
+              // bump your bitrates into YouTube’s sweet spot
+              "-b:v", "3500k",
+              "-maxrate", "3500k",
+              "-bufsize", "7000k",
+
+              "-c:a", "aac",
+              "-b:a", "192k",
+              "-ar", "44100",
+              "-ac", "2",
+
+              // ───────── Output ─────────
+              "-f", "flv",
+              `${rtmpUrl}/${streamKey}`,
+          ],
+          { stdio: ["ignore", "inherit", "inherit"] },
+      );
+
+
+
+      youtubeStreamer.on("close", (code) => {
+      console.warn(`YouTube streamer exited with code: ${code}`);
+    });
+
+    youtubeStreamer.on("error", (err) => {
+      console.error("🚨 Error in YouTube streamer process:", err);
+    });
+
+    // Assign variables for stream output and control
     ffmpegStdin = audioBuffer.stdin;
     youtubeProc = youtubeStreamer;
-    lastRotation = Date.now();
 
-    // errors & cleanup
-    ffmpegStdin.on('error', e => {
-        if (!['EPIPE','ECONNRESET'].includes(e.code)) console.error('ffmpegStdin error:', e);
-    });
-    youtubeStreamer.on('close', (code, sig) => {
-        console.warn(`YouTube FFmpeg exited (code=${code}, sig=${sig})`);
-    });
-    audioBuffer.on('close', () => {
-        if (!youtubeStreamer.killed) youtubeStreamer.kill();
-    });
+    if (!ffmpegStdin) {
+      throw new Error(
+        "❌ ffmpegStdin is not available after initializing the audio buffer.",
+      );
+    }
+
+    console.log("🎥 YouTube streaming pipeline started successfully.");
+  } catch (error) {
+    console.error("🚨 Error initializing YouTube streamer:", error);
+  }
+
+  if (!ffmpegStdin) {
+    console.error(
+      "❌ ffmpegStdin not set. The audio buffer process may have failed.",
+    );
+    throw new Error(
+      "Failed to initialize ffmpegStdin for the YouTube streaming pipeline.",
+    );
+  }
 }
 
 /**
- * Play a local file to the pulse sink (or speakers)
+ * Play a local audio file (e.g., during local playback mode)
  */
+// TODO: set the loglevel based on if we are in debug or not
 function playFile(file) {
-    const args = [
-        '-hide_banner','-loglevel','warning',
-        '-i', file, '-vn',
-        '-c:a','pcm_s16le','-ar','44100','-ac','2',
-        '-f','pulse','default'
-    ];
-    return new Promise((resolve, reject) => {
-        const ff = spawnTrackedProcess('/usr/bin/ffmpeg', args, { stdio: 'inherit' });
-        ff.once('close', code => code === 0 ? resolve() : reject(new Error(`exit ${code}`)));
-        ff.once('error', reject);
+  console.log(`🎵 Playing local file: ${file}`);
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "warning",
+    "-i",
+    file,
+    "-vn",
+    "-c:a",
+    "pcm_s16le",
+    "-ar",
+    "44100",
+    "-ac",
+    "2",
+    "-f",
+    "pulse",
+    "default",
+  ];
+
+  return new Promise((resolve, reject) => {
+    const ff = spawnTrackedProcess("/usr/bin/ffmpeg", args, {
+      stdio: "inherit",
     });
+
+    ff.once("close", (code) => {
+      if (code === 0) {
+        resolve();
+      } else {
+        reject(new Error(`FFmpeg playback exited with code ${code}`));
+      }
+    });
+    ff.once("error", reject);
+  });
 }
 
 /**
- * Stream a file into the YouTube pipeline
+ * Stream an audio file into the YouTube pipeline
  */
 function streamFile(file) {
-    // if no pipe, skip
-    if (!ffmpegStdin) {
-        console.warn('No ffmpegStdin; skipping streamFile');
-        return Promise.resolve();
-    }
+  if (!ffmpegStdin) {
+    console.warn(`❌ No ffmpegStdin available; cannot stream file: ${file}`);
+    return Promise.resolve();
+  }
 
-    return new Promise((resolve, reject) => {
-        const proc = spawnTrackedProcess(
-            '/usr/bin/ffmpeg',
-            ['-re','-hide_banner','-loglevel','warning','-i',file,'-f','s16le','-ar','44100','-ac','2','pipe:1'],
-            { stdio: ['ignore','pipe','inherit'] }
-        );
+  console.log(`🎧 Streaming file: ${file}`);
 
-        proc.stdout.pipe(ffmpegStdin, { end: false });
+  // TODO: set the loglevel based on if we are in debug or not
+  return new Promise((resolve, reject) => {
+    const ff = spawnTrackedProcess(
+      "/usr/bin/ffmpeg",
+      [
+        "-re",
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-i",
+        file,
+        "-f",
+        "s16le",
+        "-ar",
+        "44100",
+        "-ac",
+        "2",
+        "pipe:1",
+      ],
+      { stdio: ["ignore", "pipe", "inherit"] },
+    );
 
-        proc.once('close', code => code === 0 ? resolve() : resolve());
-        proc.once('error', reject);
+    ff.stdout.pipe(ffmpegStdin, { end: false });
+
+    ff.once("close", (code) =>
+      code === 0
+        ? resolve()
+        : reject(new Error(`FFmpeg streaming error: exit code ${code}`)),
+    );
+    ff.once("error", (err) => {
+      console.error("🚨 FFmpeg streaming process error:", err);
+      reject(err);
     });
+  });
 }
 
+/**
+ * Stop the YouTube streaming pipeline
+ */
 function stopYouTubeStreamer() {
-    // kill the streamer
-    if (youtubeProc && !youtubeProc.killed) {
-        youtubeProc.kill('SIGINT');
-        youtubeProc = null;
-    }
-    // close the audio FIFO
-    if (ffmpegStdin) {
-        ffmpegStdin.end();
-        ffmpegStdin = null;
-    }
-}
+  console.log("🛑 Stopping YouTube streamer...");
 
+  if (youtubeProc && !youtubeProc.killed) {
+    console.log(`🛑 Killing YouTube streamer process: PID ${youtubeProc.pid}`);
+    youtubeProc.kill("SIGINT");
+    youtubeProc = null;
+  }
+
+  if (ffmpegStdin) {
+    console.log("🛑 Closing FFmpeg stdin...");
+    ffmpegStdin.end();
+    ffmpegStdin = null;
+  }
+}
 module.exports = {
-    getFfmpegStdin,
-    startYouTubeStreamer,
-    playFile,
-    streamFile,
-    stopYouTubeStreamer
+  getFfmpegStdin,
+  startYouTubeStreamer,
+  playFile,
+  streamFile,
+  stopYouTubeStreamer,
+    getRandomCoverImage
 };

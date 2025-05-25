@@ -1,0 +1,57 @@
+{
+  "undefined": {
+    "averageRating": 4.25,
+    "ratingCount": 8,
+    "lastUpdated": "2025-05-25T06:04:10.922593+00:00",
+    "ratings": [
+      {
+        "value": 4,
+        "timestamp": "2025-05-25T03:50:39.894523+00:00",
+        "author": "David Bennell (ArmsFrost)",
+        "comment": "👍"
+      },
+      {
+        "value": 4,
+        "timestamp": "2025-05-25T03:51:04.429873+00:00",
+        "author": "David Bennell (ArmsFrost)",
+        "comment": "👍👍🏻👍🏻🫰"
+      },
+      {
+        "value": 4,
+        "timestamp": "2025-05-25T03:51:04.429873+00:00",
+        "author": "David Bennell (ArmsFrost)",
+        "comment": "👍👍🏻👍🏻🫰"
+      },
+      {
+        "value": 5,
+        "timestamp": "2025-05-25T03:54:00.027254+00:00",
+        "author": "David Bennell (ArmsFrost)",
+        "comment": "😍"
+      },
+      {
+        "value": 4,
+        "timestamp": "2025-05-25T03:54:08.585022+00:00",
+        "author": "David Bennell (ArmsFrost)",
+        "comment": "👍"
+      },
+      {
+        "value": 4,
+        "timestamp": "2025-05-25T05:46:43.55318+00:00",
+        "author": "David Bennell (ArmsFrost)",
+        "comment": "👍 yay"
+      },
+      {
+        "value": 4,
+        "timestamp": "2025-05-25T05:57:07.86142+00:00",
+        "author": "David Bennell (ArmsFrost)",
+        "comment": "👍 this is good"
+      },
+      {
+        "value": 5,
+        "timestamp": "2025-05-25T06:04:10.922593+00:00",
+        "author": "David Bennell (ArmsFrost)",
+        "comment": "🥰 this is so good"
+      }
+    ]
+  }
+}

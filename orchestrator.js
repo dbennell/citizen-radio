@@ -1,116 +1,178 @@
-// ========================
-// File: orchestrator.js (sequential planning with weighted segway reference)
-// ========================
-const fs                 = require('fs');
-const path               = require('path');
-const { pickNextTrack }  = require('./trackManager');
+const fs = require('fs');
+const path = require('path');
+const { pickNextTrack } = require('./trackManager');
 const { getLastPlays, appendPlayLog } = require('./playLogManager');
 const { generateSegway, prepareSegway } = require('./promptProcessor');
-const { playFile, streamFile } = require('./streamer');
+const { playFile, streamFile, getRandomCoverImage } = require('./streamer');
 const { STATION_CONFIG, READY_DIR } = require('./config');
-const chalk              = require('chalk').default;
+const chalk = require('chalk').default;
+const ratingManager = require('./ratingsManager');
+const { fetchLiveVideoId, extractMetadata, fetchLastChatComments } = require('./utils');
+const { createCanvas, loadImage } = require('canvas'); // npm install canvas
 
 let shouldStop = false;
 let stopAfterNextMusic = false;
+let persistentVideoId = STATION_CONFIG.youtube?.videoId || null;
 
 /**
- * Sequential playback loop
- * ─────────────────────────
- * ▸ Picks *at most one* track ahead so we can create segways while a track is playing.
- * ▸ Uses weighted history to pick a reference track for segways.
+ * Renders a live overlay PNG with cover art, track info, rating, and chat comments
+ */
+async function updateOverlay(trackPath, videoId) {
+    const meta = extractMetadata(trackPath);
+    const { title = 'Unknown Title', artist = 'Unknown Artist', rating = 0, picture } = meta;
+
+    // Pick cover buffer
+    const coverBuffer = (picture?.data && picture.data.length)
+        ? picture.data
+        : fs.readFileSync(getRandomCoverImage());
+
+    // Grab chat comments…
+    let comments = [];
+    try { comments = await fetchLastChatComments(videoId, 10); } catch {}
+
+    // Canvas setup
+    const W = 1280, H = 720;
+    const canvas = createCanvas(W, H);
+    const ctx    = canvas.getContext('2d');
+
+    // 1) Draw cover art full-screen, cropped but keeping ratio
+    const img = await loadImage(coverBuffer);
+    const iw = img.width, ih = img.height;
+    // scale so it *covers* the entire canvas
+    const scale = Math.max(W/iw, H/ih);
+    const nw = iw * scale, nh = ih * scale;
+    const dx = (W - nw) / 2, dy = (H - nh) / 2;
+    ctx.drawImage(img, dx, dy, nw, nh);
+
+    // 2) Darken bottom band for text
+    const bandH = 140;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(0, H - bandH, W, bandH);
+
+    // 3) Draw track info
+    ctx.fillStyle = '#FFF';
+    ctx.font = 'bold 36px sans-serif';
+    ctx.fillText(title, 40, H - bandH + 50);
+    ctx.font = '28px sans-serif';
+    ctx.fillText(artist, 40, H - bandH + 90);
+    ctx.fillText(`★ ${rating}`, 40, H - bandH + 130);
+
+    const padding = 20;
+    const lineHeight = 24;
+    const boxWidth = 400;
+    const boxHeight = padding * 2 + comments.length * lineHeight;
+    const boxX = W - boxWidth - padding;
+    const boxY = padding;
+
+    // background box
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+    ctx.fillRect(boxX, boxY, boxWidth, boxHeight);
+
+    // draw each message
+    ctx.fillStyle = '#FFF';
+    ctx.font = '20px monospace';
+    ctx.textAlign = 'left';
+    comments.forEach((msg, i) => {
+        const y = boxY + padding + (i + 1) * lineHeight - (lineHeight / 4);
+        ctx.fillText(msg, boxX + padding, y);
+    });
+
+    // // 4) Draw last 10 comments above the band
+    // ctx.font = '20px monospace';
+    // comments.forEach((c,i) => {
+    //     const y = H - bandH - 20 - (comments.length - 1 - i)*24;
+    //     ctx.fillText(`• ${c}`, 40, y);
+    // });
+
+
+    // 5) Write out the PNG
+    return new Promise((resolve, reject) => {
+        const out = fs.createWriteStream('/tmp/overlay.png');
+        canvas.createPNGStream().pipe(out);
+        out.on('finish', resolve);
+        out.on('error', reject);
+    });
+}
+
+
+/**
+ * Fetches or returns a cached YouTube Live videoId for chat polling
+ */
+async function getPersistentVideoId() {
+    if (persistentVideoId) return persistentVideoId;
+    try {
+        console.log('🔍 VideoId not set, fetching dynamically...');
+        const fetchedId = await fetchLiveVideoId();
+        if (fetchedId) {
+            console.log(`✅ Fetched videoId: ${fetchedId}`);
+            persistentVideoId = fetchedId;
+            return persistentVideoId;
+        }
+    } catch (err) {
+        console.error('🚨 Error fetching videoId:', err.message);
+    }
+    console.warn('⚠ VideoId missing: live chat disabled');
+    return null;
+}
+
+/**
+ * Main playback loop
  */
 async function playbackLoop() {
-    const pattern         = STATION_CONFIG.schedule.defaultPattern;
+    const pattern = STATION_CONFIG.schedule.defaultPattern;
     const { historySize = 16, weights = {} } = STATION_CONFIG.trackHistory || {};
     const includePodcasts = !!STATION_CONFIG.djOptions?.includePodcasts;
 
-    // Convert hours → ms, or null if indefinite
     const uptimeMs = typeof STATION_CONFIG.uptimeHours === 'number'
         ? STATION_CONFIG.uptimeHours * 3600 * 1000
         : null;
     const startTime = Date.now();
 
-    // One-track lookahead cache
     let nextEntry = null;
+    const vid = await getPersistentVideoId();
+    if (vid) console.log('📹 Live commenting enabled:', vid);
 
-    console.log(chalk.yellow(`▶️ Starting station stream playback with pattern: ${pattern.join(', ')}`));
+    console.log(chalk.yellow(`▶️ Starting playback: ${pattern.join(', ')}`));
     console.log(chalk.magenta(`⏱️ Uptime: ${STATION_CONFIG.uptimeHours || '∞'}h, mode: ${STATION_CONFIG.uptimeMode || 'none'}`));
 
     while (!shouldStop) {
-        // enforce uptime cutoffs
+        // Uptime enforcement
         if (uptimeMs !== null) {
             const elapsed = Date.now() - startTime;
             if (STATION_CONFIG.uptimeMode === 'cycle' && elapsed >= uptimeMs) {
-                console.log(`🛑 Uptime (${STATION_CONFIG.uptimeHours}h) reached; ending after this cycle.`);
+                console.log('🛑 Uptime reached: ending cycle');
                 break;
             }
             if (STATION_CONFIG.uptimeMode === 'track' && elapsed >= uptimeMs) {
-                console.log(`🛑 Uptime (${STATION_CONFIG.uptimeHours}h) reached; will stop after next music track.`);
+                console.log('🛑 Uptime reached: stopping after next track');
                 stopAfterNextMusic = true;
             }
         }
 
-        console.log(chalk.green(`🎧 Starting new cycle at ${new Date().toLocaleTimeString()}`));
+        console.log(chalk.green(`🎧 New cycle at ${new Date().toLocaleTimeString()}`));
 
         for (let i = 0; i < pattern.length && !shouldStop; i++) {
             const type = pattern[i];
 
-            // ──────────────── SEGWAY ────────────────
+            // -- Segway --
             if (type === 'segway') {
                 const nextType = pattern[i + 1];
-                // look-ahead pick
                 if (nextType && nextType !== 'segway' && !nextEntry) {
                     nextEntry = await pickNextTrack(nextType);
                 }
+                if (!nextEntry?.meta?.title) continue;
 
-                if (!nextEntry?.meta?.title) {
-                    console.warn('[Segway Debug] No valid nextEntry; skipping segway.');
-                    continue;
-                }
-                console.log(`🔄 Segway step: next is "${nextEntry.meta.title}"`);
-
-                // build reference history
                 const recent = getLastPlays(historySize);
-                console.log(`[Segway Debug] history length: ${recent.length}`);
+                let ref = recent.slice().reverse().find(e => e.type === 'music' && (weights[e.type] || 0) > 0 && e.meta.title !== 'Placeholder Track');
+                if (!ref) ref = recent.find(e => (weights[e.type] || 0) > 0 && e.meta.title !== 'Placeholder Track');
 
-                // find last weighted 'music' entry
-                let ref = null;
-                for (let j = recent.length - 1; j >= 0; j--) {
-                    const e = recent[j];
-                    if (e.type === 'music' && (weights[e.type] || 0) > 0 && e.meta.title !== 'Placeholder Track') {
-                        ref = e;
-                        break;
-                    }
-                }
-                if (!ref) {
-                    ref = recent.find(e => (weights[e.type] || 0) > 0 && e.meta.title !== 'Placeholder Track') || null;
-                }
-                if (ref) {
-                    console.log(`[Segway Debug] ref track: "${ref.meta.title}" (${ref.type})`);
-                } else {
-                    console.warn('[Segway Debug] no ref track; will use intro logic');
-                }
-
-                // prepare segway metadata
-                const prevSegMeta = ref
-                    ? { ...ref.meta, type: ref.type }
-                    : { type: 'start', title: '' };
+                const prevSegMeta = ref ? { ...ref.meta, type: ref.type } : { type: 'start', title: '' };
                 const nextSegMeta = { ...nextEntry.meta, type: nextType };
 
-                // delegate all messaging logic to promptProcessor
                 try {
                     const text = await generateSegway(prevSegMeta, nextSegMeta);
-                    if (!text.trim()) {
-                        console.log(`[Segway] empty text for ${prevSegMeta.type}→${nextSegMeta.type}; skipping`);
-                        continue;
-                    }
-
-                    const segFile = await prepareSegway(
-                        text,
-                        prevSegMeta,
-                        nextSegMeta,
-                        `${prevSegMeta.type}_to_${nextSegMeta.type}`
-                    );
+                    if (!text.trim()) continue;
+                    const segFile = await prepareSegway(text, prevSegMeta, nextSegMeta, `${prevSegMeta.type}_to_${nextSegMeta.type}`);
                     if (!segFile) continue;
 
                     if (STATION_CONFIG.streamMode === 'youtube') {
@@ -122,11 +184,10 @@ async function playbackLoop() {
                 } catch (err) {
                     console.error('Segway error:', err);
                 }
-
-                continue; // next pattern step
+                continue;
             }
 
-            // ──────────────── TRACK ────────────────
+            // -- Track --
             let entry;
             if (type === 'dj' && includePodcasts) {
                 entry = await pickNextTrackWithPodcasts();
@@ -136,21 +197,30 @@ async function playbackLoop() {
             } else {
                 entry = await pickNextTrack(type);
             }
-
-            if (!entry) {
-                console.warn(`No track for "${type}"; skipping.`);
-                continue;
-            }
+            if (!entry) continue;
 
             try {
+                const trackRel = path.relative(READY_DIR(''), entry.filepath);
+                if (type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
+                    ratingManager.setCurrentlyPlaying({ trackRel, title: entry.meta.title, artist: entry.meta.artist, type });
+                    const windowStart = ratingManager.openCommentWindow();
+                    console.log(`📊 Rating: tracking "${entry.meta.title}" from ${windowStart}`);
+                }
+
                 if (STATION_CONFIG.streamMode === 'youtube') {
+                    await updateOverlay(entry.filepath, vid);
                     await streamFile(entry.filepath);
                 } else {
                     await playFile(entry.filepath);
                 }
-                // log play so segways see it
-                const rel = path.relative(READY_DIR(''), entry.filepath);
-                appendPlayLog(rel, type, entry.meta);
+
+                if (type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
+                    const windowEnd = ratingManager.closeCommentWindow();
+                    const count = await ratingManager.pollForComments(vid);
+                    console.log(`📊 Collected ${count} comment${count===1?'':'s'} up to ${windowEnd}`);
+                }
+
+                appendPlayLog(trackRel, type, entry.meta);
             } catch (err) {
                 console.error(`Error playing ${type}:`, err);
             }
@@ -164,32 +234,25 @@ async function playbackLoop() {
     }
 }
 
-// ─────────── Podcast + DJ mix helper ───────────
+// Helper for DJ/podcast mix
 async function pickNextTrackWithPodcasts() {
-    const djDir      = READY_DIR('dj');
-    const podDir     = READY_DIR('podcast');
-    const djFiles    = fs.readdirSync(djDir).map(f => path.join(djDir, f));
-    const podFiles   = fs.readdirSync(podDir).map(f => path.join(podDir, f));
-    const all        = [...djFiles, ...podFiles].filter(f => /\.(mp3|wav)$/i.test(f));
-    if (!all.length) {
-        console.warn('No DJ/podcast files.');
-        return null;
-    }
+    const djDir = READY_DIR('dj');
+    const podDir = READY_DIR('podcast');
+    const djFiles = fs.readdirSync(djDir).map(f => path.join(djDir, f));
+    const podFiles = fs.readdirSync(podDir).map(f => path.join(podDir, f));
+    const all = [...djFiles, ...podFiles].filter(f => /\.(mp3|wav)$/i.test(f));
+    if (!all.length) return null;
     const choice = all[Math.floor(Math.random() * all.length)];
-    const meta   = await require('./utils').extractMetadata(choice);
+    const meta = await extractMetadata(choice);
     return { filepath: choice, meta };
 }
 
-function stopPlayback() {
-    shouldStop = true;
-}
-
-function requestStop() {
-    stopAfterNextMusic = true;
-}
+function stopPlayback() { shouldStop = true; }
+function requestStop() { stopAfterNextMusic = true; }
 
 module.exports = {
     playbackLoop,
     stopPlayback,
     requestStop,
+    getPersistentVideoId
 };

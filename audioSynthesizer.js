@@ -180,6 +180,7 @@ function stitchAudio(files, output) {
         if (validFiles.length === 2) {
             // For exactly 2 files, we can use a simpler approach
             console.log('Running ffmpeg with crossfade for 2 files...');
+            // TODO: set the loglevel based on if we are in debug or not
             execSync(`ffmpeg -hide_banner -loglevel warning -i "${validFiles[0]}" -i "${validFiles[1]}" -filter_complex "[0:a][1:a]acrossfade=d=0.2:c1=tri:c2=tri[a]" -map "[a]" "${safeOutput}"`, { stdio: 'inherit' });
             console.log('FFmpeg crossfade complete.');
         } else {
@@ -194,6 +195,7 @@ function stitchAudio(files, output) {
             // Process each file to consistent format
             for (let i = 0; i < validFiles.length; i++) {
                 const normalizedFile = path.join(normalizedDir, `norm_${i}.mp3`);
+                // TODO: set the loglevel based on if we are in debug or not
                 execSync(`ffmpeg -hide_banner -loglevel warning -i "${validFiles[i]}" -af "loudnorm=I=-16:TP=-1:LRA=11" "${normalizedFile}"`, { stdio: 'inherit' });
                 normalizedFiles.push(normalizedFile);
             }
@@ -205,6 +207,7 @@ function stitchAudio(files, output) {
             fs.writeFileSync(normListFile, normContent, 'utf8');
 
             // Simple concatenation (without crossfade)
+            // TODO: set the loglevel based on if we are in debug or not
             execSync(`ffmpeg -hide_banner -loglevel warning -f concat -safe 0 -i "${normListFile}" -c copy "${safeOutput}"`, { stdio: 'inherit' });
             console.log('FFmpeg concatenation complete.');
 
@@ -215,6 +218,7 @@ function stitchAudio(files, output) {
         console.warn('Advanced audio processing failed, retrying simple concat...', err.message);
         try {
             // Fallback to simple concatenation without any processing
+            // TODO: set the loglevel based on if we are in debug or not
             execSync(`ffmpeg -hide_banner -loglevel warning -f concat -safe 0 -i "${listFile}" -c copy "${safeOutput}"`, { stdio: 'inherit' });
             console.log('FFmpeg simple concat complete.');
         } catch (err2) {

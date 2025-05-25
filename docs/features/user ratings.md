@@ -80,7 +80,7 @@ Even poorly rated or unrated tracks get a chance to play, preserving playlist di
 Core functions:
 
 ```javascript
-captureYouTubeComments()     // Polls YouTube API for new comments
+readLiveChat()               // Reads Stream Chat
 parseRatingFromComment()     // Extracts rating emoji and timestamp
 matchRatingToTrack()         // Associates rating with currently playing track
 updateTrackRating()          // Updates rating data
@@ -171,13 +171,6 @@ A web UI to:
   "defaultRating": 3,
   "minTickets": 1,
   "maxTickets": 5,
-  "customWeights": {
-    "1": 1,
-    "2": 2,
-    "3": 3,
-    "4": 4,
-    "5": 5
-  },
   "commentPollInterval": 30,
   "ratingPersistence": true,
   "displayOnStream": true
@@ -230,6 +223,13 @@ The raffle pool might have 30 tickets total, with Track A having a 16.7% chance 
 * **Fairness**: All tracks must eventually play (unless blacklisted)
 
 ---
+
+## Stretch Goal
+
+- Make the matched ratings display as an overlay on the image in the top right hand corner
+- A list of a max of 8 ratings, given in order of when they were made, by who and what rating.
+- Have a cut off for 2 mins, so the only entries in the list will be ones from the last 2 mins, and the last 8 as a combined filter criteria
+
 
 ## ✅ Conclusion
 

@@ -56,6 +56,17 @@
   },
   "streamMode": "youtube",
   "youtube": {
-    "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2"
+    "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2",
+    "updateMetadata": true,
+    "createAutomatically": false
+  },
+  "ratingSystem": {
+    "enabled": true,
+    "defaultRating": 3,
+    "minTickets": 1,
+    "maxTickets": 5,
+    "ratingPersistence": true,
+    "displayOnStream": true,
+    "streamDelay": 0
   }
 }
