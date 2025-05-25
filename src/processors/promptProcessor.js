@@ -15,10 +15,10 @@ const glob = require("glob");
 const chokidar = require("chokidar");
 const OpenAI = require("openai");
 const textToSpeech = require("@google-cloud/text-to-speech");
-const tracksManager  = require("./trackManager");
-const ratingManager = require('./ratingsManager');
+const tracksManager  = require("../managers/trackManager");
+const ratingManager = require('../managers/ratingsManager');
 
-const { PROMPT_DIRS, READY_DIR, STATION_CONFIG } = require("./config");
+const { PROMPT_DIRS, READY_DIR, STATION_CONFIG } = require("../core/config");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const ttsClient = new textToSpeech.TextToSpeechClient();
@@ -437,9 +437,9 @@ async function generateSegway(prevMeta, nextMeta) {
             // Create a focused prompt for music-to-music transition
             const userPrompt = `
                 You are a lively and enthusiastic DJ on a galactic space station.
-                
+
                 Here’s the context for the songs:
-                
+
                 Previous song:
                 - Title: "${prevTitle}"
                 ${prevMeta?.artist ? `- Artist: ${prevMeta.artist}` : ''}
@@ -447,7 +447,7 @@ async function generateSegway(prevMeta, nextMeta) {
                 ${prevMeta?.genre ? `- Genre: ${prevMeta.genre}` : ''}
                 ${prevMeta?.comment ? `- Note: ${prevMeta.comment}` : ''}
                 ${prevRatingInfo}
-                
+
                 Next song:
                 - Title: "${nextTitle}"
                 ${nextMeta?.artist ? `- Artist: ${nextMeta.artist}` : ''}
@@ -455,14 +455,14 @@ async function generateSegway(prevMeta, nextMeta) {
                 ${nextMeta?.genre ? `- Genre: ${nextMeta.genre}` : ''}
                 ${nextMeta?.comment ? `- Note: ${nextMeta.comment}` : ''}
                 ${nextRatingInfo}
-                
+
                 Task:
                 Create a short, natural DJ-style transition from the previous track to the next.
                 Mention the names of both songs and artists. 
                 Only use the extra details (album, genre, notes) **if they help make the transition smoother or funnier** — they are optional flavor.
-                
+
                 ${prompt}
-                
+
                 Respond only with the DJ’s spoken words. Limit to 1–2 sentences. Be natural and entertaining.
                 `;
 
@@ -525,30 +525,30 @@ async function generateSegway(prevMeta, nextMeta) {
         // Create a richer prompt with whatever information we have
         const userPrompt = `
             You are a lively and enthusiastic DJ on a galactic space station.
-            
+
             Here’s the context for the songs:
-            
+
             Previous song:
             - Title: "${prevTitle}"
             ${prevMeta?.artist ? `- Artist: ${prevMeta.artist}` : ''}
             ${prevMeta?.album ? `- Album: ${prevMeta.album}` : ''}
             ${prevMeta?.genre ? `- Genre: ${prevMeta.genre}` : ''}
             ${prevMeta?.comment ? `- Note: ${prevMeta.comment}` : ''}
-            
+
             Next song:
             - Title: "${nextTitle}"
             ${nextMeta?.artist ? `- Artist: ${nextMeta.artist}` : ''}
             ${nextMeta?.album ? `- Album: ${nextMeta.album}` : ''}
             ${nextMeta?.genre ? `- Genre: ${nextMeta.genre}` : ''}
             ${nextMeta?.comment ? `- Note: ${nextMeta.comment}` : ''}
-            
+
             Task:
             Create a short, natural DJ-style transition from the previous track to the next.
             Mention the names of both songs and artists. 
             Only use the extra details (album, genre, notes) **if they help make the transition smoother or funnier** — they are optional flavor.
-            
+
             ${prompt}
-            
+
             Respond only with the DJ’s spoken words. Limit to 1–2 sentences. Be natural and entertaining.
             `;
 

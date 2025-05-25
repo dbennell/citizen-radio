@@ -3,7 +3,8 @@
 // ========================
 const fs = require("fs");
 const path = require("path");
-const { spawnTrackedProcess } = require("./utils");
+const { execSync } = require("child_process");
+const { spawnTrackedProcess } = require("../utils");
 const { STATION_CONFIG, READY_DIR } = require("./config");
 
 let ffmpegStdin;
@@ -250,6 +251,7 @@ function streamFile(file) {
 
   // TODO: set the loglevel based on if we are in debug or not
   return new Promise((resolve, reject) => {
+    let streamEnded = false;
     const ff = spawnTrackedProcess(
       "/usr/bin/ffmpeg",
       [
@@ -270,37 +272,96 @@ function streamFile(file) {
       { stdio: ["ignore", "pipe", "inherit"] },
     );
 
-    ff.stdout.pipe(ffmpegStdin, { end: false });
+    // Handle pipe errors gracefully
+    const pipeStream = ff.stdout.pipe(ffmpegStdin, { end: false });
 
-    ff.once("close", (code) =>
-      code === 0
-        ? resolve()
-        : reject(new Error(`FFmpeg streaming error: exit code ${code}`)),
-    );
+    pipeStream.on('error', (err) => {
+      if (!streamEnded) {
+        streamEnded = true;
+        console.error("🚨 Pipe stream error:", err.message);
+
+        // Clean up the FFmpeg process
+        if (!ff.killed) {
+          try {
+            ff.kill('SIGTERM');
+          } catch (killErr) {
+            console.error("Failed to kill FFmpeg process:", killErr);
+          }
+        }
+
+        reject(new Error(`Pipe stream error: ${err.message}`));
+      }
+    });
+
+    ff.once("close", (code) => {
+      if (!streamEnded) {
+        streamEnded = true;
+        if (code === 0) {
+          resolve();
+        } else {
+          console.error(`🚨 FFmpeg process exited with code ${code}`);
+          reject(new Error(`FFmpeg streaming error: exit code ${code}`));
+        }
+      }
+    });
+
     ff.once("error", (err) => {
-      console.error("🚨 FFmpeg streaming process error:", err);
-      reject(err);
+      if (!streamEnded) {
+        streamEnded = true;
+        console.error("🚨 FFmpeg streaming process error:", err);
+        reject(err);
+      }
     });
   });
 }
 
 /**
  * Stop the YouTube streaming pipeline
+ * @returns {Promise} A promise that resolves when the YouTube streamer has been stopped
  */
 function stopYouTubeStreamer() {
   console.log("🛑 Stopping YouTube streamer...");
 
-  if (youtubeProc && !youtubeProc.killed) {
-    console.log(`🛑 Killing YouTube streamer process: PID ${youtubeProc.pid}`);
-    youtubeProc.kill("SIGINT");
-    youtubeProc = null;
-  }
+  // Track if we've started cleanup
+  let cleanupStarted = false;
 
-  if (ffmpegStdin) {
-    console.log("🛑 Closing FFmpeg stdin...");
-    ffmpegStdin.end();
-    ffmpegStdin = null;
-  }
+  // Return a promise that resolves when cleanup is complete
+  return new Promise((resolve) => {
+    // Create a cleanup function to avoid code duplication
+    const cleanup = () => {
+      if (cleanupStarted) return;
+      cleanupStarted = true;
+
+      if (youtubeProc && !youtubeProc.killed) {
+        console.log(`🛑 Killing YouTube streamer process: PID ${youtubeProc.pid}`);
+        try {
+          youtubeProc.kill("SIGINT");
+        } catch (err) {
+          console.error(`Failed to kill YouTube streamer process: ${err.message}`);
+        }
+        youtubeProc = null;
+      }
+
+      if (ffmpegStdin) {
+        console.log("🛑 Closing FFmpeg stdin...");
+        try {
+          ffmpegStdin.end();
+        } catch (err) {
+          console.error(`Failed to close FFmpeg stdin: ${err.message}`);
+        }
+        ffmpegStdin = null;
+      }
+
+      // Wait a short time for processes to begin terminating
+      setTimeout(() => {
+        console.log("✅ YouTube streamer shutdown complete");
+        resolve();
+      }, 500);
+    };
+
+    // Execute cleanup
+    cleanup();
+  });
 }
 module.exports = {
   getFfmpegStdin,

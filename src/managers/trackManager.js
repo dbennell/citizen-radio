@@ -4,8 +4,8 @@
 const fs   = require('fs');
 const path = require('path');
 const { getPlayCount, getLastPlays } = require('./playLogManager');
-const { extractMetadata }            = require('./utils');
-const { STATION_CONFIG, READY_DIR }  = require('./config');
+const { extractMetadata }            = require('../utils');
+const { STATION_CONFIG, READY_DIR }  = require('../core/config');
 const ratingManager = require('./ratingsManager');
 
 

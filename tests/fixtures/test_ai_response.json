@@ -1,0 +1,21 @@
+{
+  "id": "test-response-id",
+  "object": "chat.completion",
+  "created": 1684000000,
+  "model": "gpt-3.5-turbo",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Hey there, music lovers! That was 'Test Song' by 'Test Artist'. What a great track! Up next, we've got another fantastic tune coming your way. Stay tuned!"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 100,
+    "completion_tokens": 50,
+    "total_tokens": 150
+  }
+}

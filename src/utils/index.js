@@ -4,20 +4,30 @@ const path = require("path");
 const NodeID3 = require("node-id3");
 const runningProcesses = [];
 const { google } = require('googleapis');
-const { STATION_CONFIG } = require('./config');
+const { STATION_CONFIG } = require('../core/config');
 
 
 /**
  * Fetch the currently active live broadcast's video ID from YouTube.
- * @returns {Promise<string|null>} The active video's ID or null if not found.
+ * If no active broadcast is found, attempts to fetch the most recent completed broadcast.
+ * @returns {Promise<string|null>} The video ID or null if not found.
  */
 async function fetchLiveVideoId() {
     console.log('🔍 Attempting to fetch active YouTube live stream video ID...');
+
+    // Check if API key is available
+    if (!process.env.YOUTUBE_API_KEY) {
+        console.error('🚨 YouTube API key not found in environment variables');
+        console.log('💡 Set YOUTUBE_API_KEY in your .env file or provide a videoId in station.json');
+        return null;
+    }
+
     const youtube = google.youtube({
         version: 'v3',
         auth: process.env.YOUTUBE_API_KEY
     });
 
+    // First try: Get active broadcasts
     try {
         const response = await youtube.liveBroadcasts.list({
             part: 'id,snippet',
@@ -30,13 +40,41 @@ async function fetchLiveVideoId() {
             console.log('✅ Active live video ID found:', activeBroadcast.id);
             return activeBroadcast.id;
         } else {
-            console.warn('⚠️ No active live streams found for the channel.');
-            return null;
+            console.log('ℹ️ No active live streams found, checking for recent streams...');
         }
     } catch (error) {
-        console.error('🚨 Error fetching active YouTube live stream:', error.message);
-        return null;
+        // Handle specific error cases
+        if (error.message.includes('Login Required')) {
+            console.error('🚨 Error: YouTube API requires authentication for liveBroadcasts.list');
+            console.log('💡 Try using search.list instead to find recent live streams');
+        } else {
+            console.error('🚨 Error fetching active YouTube live stream:', error.message);
+        }
     }
+
+    // Second try: Get recent live streams using search API (doesn't require OAuth)
+    try {
+        const searchResponse = await youtube.search.list({
+            part: 'id,snippet',
+            eventType: 'completed',
+            type: 'video',
+            order: 'date',
+            maxResults: 1,
+            channelId: STATION_CONFIG.youtube?.channelId
+        });
+
+        const recentStream = searchResponse.data.items?.[0];
+        if (recentStream && recentStream.id?.videoId) {
+            console.log('✅ Recent live stream video ID found:', recentStream.id.videoId);
+            return recentStream.id.videoId;
+        } else {
+            console.warn('⚠️ No recent live streams found for the channel.');
+        }
+    } catch (error) {
+        console.error('🚨 Error fetching recent YouTube live streams:', error.message);
+    }
+
+    return null;
 }
 
 
@@ -214,16 +252,63 @@ function extractMetadata(filePath) {
     }
 }
 
+/**
+ * Kill all tracked processes with a graceful shutdown approach
+ * @returns {Promise} A promise that resolves when all processes have been terminated
+ */
 function killAllTrackedProcesses() {
-    runningProcesses.forEach(proc => {
-        if (!proc.killed) {
-            console.log(`Killing PID ${proc.pid}`);
-            try {
-                proc.kill("SIGTERM");
-            } catch (err) {
-                console.error(`Failed to kill PID ${proc.pid}:`, err);
-            }
+    return new Promise((resolve) => {
+        // Make a copy of the array to avoid modification during iteration
+        const processes = [...runningProcesses];
+
+        if (processes.length === 0) {
+            console.log('No processes to kill. Cleanup complete.');
+            return resolve();
         }
+
+        console.log(`Attempting to terminate ${processes.length} running processes...`);
+
+        // First attempt: SIGTERM (graceful shutdown)
+        processes.forEach(proc => {
+            if (!proc.killed) {
+                console.log(`🛑 Killing process: PID ${proc.pid}`);
+                try {
+                    proc.kill("SIGTERM");
+                } catch (err) {
+                    console.error(`Failed to kill PID ${proc.pid} with SIGTERM:`, err);
+                }
+            }
+        });
+
+        // Give processes a chance to terminate gracefully
+        setTimeout(() => {
+            let remainingProcesses = 0;
+
+            // Second attempt: SIGKILL (force kill) for any remaining processes
+            processes.forEach(proc => {
+                if (!proc.killed && runningProcesses.includes(proc)) {
+                    remainingProcesses++;
+                    console.log(`⚠️ Process ${proc.pid} did not terminate gracefully, using SIGKILL`);
+                    try {
+                        proc.kill("SIGKILL");
+                    } catch (err) {
+                        console.error(`Failed to kill PID ${proc.pid} with SIGKILL:`, err);
+                    }
+                }
+            });
+
+            // Clear the runningProcesses array
+            runningProcesses.length = 0;
+
+            if (remainingProcesses > 0) {
+                console.log(`Forcefully terminated ${remainingProcesses} remaining processes.`);
+            } else {
+                console.log('All processes terminated gracefully.');
+            }
+
+            console.log('✅ Process cleanup complete.');
+            resolve();
+        }, 1000); // Wait 1 second before force killing
     });
 }
 

@@ -1,0 +1,17 @@
+{
+  "name": "Test Station",
+  "description": "A test station for automated testing",
+  "uptimeHours": 0.01,
+  "uptimeMode": "cycle",
+  "schedule": {
+    "defaultPattern": ["intro", "music", "dj", "music"]
+  },
+  "paths": {
+    "music": "tests/fixtures",
+    "intro": "tests/fixtures",
+    "dj": "tests/fixtures"
+  },
+  "youtube": {
+    "enabled": false
+  }
+}

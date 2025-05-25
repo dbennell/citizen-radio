@@ -1,0 +1,32 @@
+[
+  {
+    "id": "comment1",
+    "authorDisplayName": "TestUser1",
+    "textDisplay": "Great song! 5/5",
+    "publishedAt": "2023-05-01T12:00:00Z"
+  },
+  {
+    "id": "comment2",
+    "authorDisplayName": "TestUser2",
+    "textDisplay": "Not my favorite. 2/5",
+    "publishedAt": "2023-05-01T12:05:00Z"
+  },
+  {
+    "id": "comment3",
+    "authorDisplayName": "TestUser3",
+    "textDisplay": "Love this track! 4/5",
+    "publishedAt": "2023-05-01T12:10:00Z"
+  },
+  {
+    "id": "comment4",
+    "authorDisplayName": "TestUser4",
+    "textDisplay": "This is just a comment with no rating.",
+    "publishedAt": "2023-05-01T12:15:00Z"
+  },
+  {
+    "id": "comment5",
+    "authorDisplayName": "TestUser5",
+    "textDisplay": "Terrible selection. 1/5",
+    "publishedAt": "2023-05-01T12:20:00Z"
+  }
+]

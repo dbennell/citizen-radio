@@ -2,13 +2,19 @@
   "name": "citizenradio",
   "version": "1.0.0",
   "description": "",
-  "main": "streamer.js",
+  "main": "src/core/main.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "start": "node index.js",
-    "start:4h": "node index.js --uptime 4",
-    "start:debug": "node index.js --debug",
-    "start:local": "node index.js --stream-mode local"
+    "test": "jest",
+    "test:watch": "jest --watch",
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest tests/unit",
+    "test:integration": "jest tests/integration",
+    "test:e2e": "jest tests/e2e",
+    "test:performance": "jest tests/performance",
+    "start": "node src/core/main.js",
+    "start:4h": "node src/core/main.js --uptime 4",
+    "start:debug": "node src/core/main.js --debug",
+    "start:local": "node src/core/main.js --stream-mode local"
   },
   "private": true,
   "dependencies": {
@@ -25,5 +31,11 @@
     "jimp": "^1.6.0",
     "node-id3": "^0.2.9",
     "openai": "^4.97.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "sinon": "^17.0.1",
+    "supertest": "^6.3.3"
   }
 }

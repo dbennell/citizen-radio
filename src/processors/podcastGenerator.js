@@ -15,7 +15,7 @@ const {
 
 const {
   assignVoiceToName
-} = require('./voiceManager');
+} = require('../managers/voiceManager');
 
 const {
   synthesizeSpeechWithVoice,

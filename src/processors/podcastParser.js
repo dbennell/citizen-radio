@@ -6,7 +6,7 @@
 
 const { OpenAI } = require('openai');
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const { assignVoiceToName } = require('./voiceManager');
+const { assignVoiceToName } = require('../managers/voiceManager');
 
 /**
  * Preprocess script parts for TTS compatibility

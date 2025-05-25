@@ -1,14 +1,14 @@
 
 const fs = require('fs');
 const path = require('path');
-const { readLiveChat} = require('./utils');
-const { STATION_CONFIG } = require('./config'); // Fix the import to use destructuring
+const { readLiveChat} = require('../utils');
+const { STATION_CONFIG } = require('../core/config'); // Fix the import to use destructuring
 //const { getPersistentVideoId } = require('./orchestrator');
 
 let commentWindow = { start: Date.now(), end: Date.now() };
 
 // right after your imports, before any functions:
-const ratingPath = path.join(__dirname, 'ratings.json');
+const ratingPath = path.join(__dirname, '../../data/ratings.json');
 if (!fs.existsSync(ratingPath)) {
     fs.writeFileSync(ratingPath, JSON.stringify({}, null, 2));
 }
@@ -67,7 +67,7 @@ function setCurrentlyPlaying(trackInfo) {
  * @returns {Object} - The ratings data
  */
 function loadRatings() {
-    const ratingPath = path.join(__dirname, 'ratings.json');
+    const ratingPath = path.join(__dirname, '../../data/ratings.json');
     try {
         if (fs.existsSync(ratingPath)) {
             return JSON.parse(fs.readFileSync(ratingPath, 'utf8'));
@@ -85,7 +85,7 @@ function loadRatings() {
  * @returns {boolean} - Success status
  */
 function saveRatings(ratings) {
-    const ratingPath = path.join(__dirname, 'ratings.json');
+    const ratingPath = path.join(__dirname, '../../data/ratings.json');
     try {
         fs.writeFileSync(ratingPath, JSON.stringify(ratings, null, 2));
         return true;

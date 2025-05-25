@@ -1,17 +1,17 @@
 // ========================
-// File: index.js
+// File: main.js (formerly index.js)
 // ========================
-const { createDirectories, initPromptWatcher } = require('./promptProcessor');
+const { createDirectories, initPromptWatcher } = require('../processors/promptProcessor');
 const { playbackLoop, stopPlayback, requestStop}          = require('./orchestrator');
 const { startYouTubeStreamer, getFfmpegStdin }= require('./streamer');
-const tracksManager                           = require('./trackManager');
-const { runningProcesses }                    = require('./utils');
+const tracksManager                           = require('../managers/trackManager');
+const { runningProcesses }                    = require('../utils');
 const { STATION_CONFIG }                      = require('./config');
 const fs = require('fs');
 const path = require('path');
-const ratingManager = require('./ratingsManager');
+const ratingManager = require('../managers/ratingsManager');
 
-const TEMP_ROOT = path.join(__dirname, 'temp');
+const TEMP_ROOT = path.join(__dirname, '../../data/temp');
 
 // Add near the beginning of your main function
 let metadataUpdateInterval;
@@ -20,38 +20,43 @@ let metadataUpdateInterval;
 function cleanup() {
     console.log('🛑 Cleaning up... Stopping playback and processes.');
 
-    // Stop playback loop
-    stopPlayback();
+    // Create a promise to track cleanup completion
+    const cleanupPromise = new Promise(async (resolve) => {
+        // Stop playback loop
+        stopPlayback();
 
-    // End FFmpeg stdin if it exists
-    const stdin = getFfmpegStdin();
-    if (stdin) stdin.end();
-
-    // Stop the YouTube streamer
-    if (STATION_CONFIG.streamMode === 'youtube') {
-        if (metadataUpdateInterval) clearInterval(metadataUpdateInterval);
-
-        const { stopYouTubeStreamer } = require('./streamer');
-        stopYouTubeStreamer();
-    }
-
-    // Kill all monitored processes (including FFmpeg)
-    runningProcesses.forEach(proc => {
-        if (!proc.killed) {
-            console.log(`🛑 Killing process: PID ${proc.pid}`);
-            try {
-                proc.kill("SIGTERM");
-            } catch (err) {
-                console.error(`Failed to kill PID ${proc.pid}:`, err.message);
-            }
+        // End FFmpeg stdin if it exists
+        const stdin = getFfmpegStdin();
+        if (stdin) {
+            console.log('🛑 Closing FFmpeg stdin...');
+            stdin.end();
         }
+
+        // Stop the YouTube streamer
+        if (STATION_CONFIG.streamMode === 'youtube') {
+            if (metadataUpdateInterval) {
+                clearInterval(metadataUpdateInterval);
+            }
+
+            const { stopYouTubeStreamer } = require('./streamer');
+            await stopYouTubeStreamer();
+        }
+
+        // Import killAllTrackedProcesses to ensure all processes are terminated
+        const { killAllTrackedProcesses } = require('../utils');
+
+        // Wait for all processes to be terminated
+        console.log('🧹 Terminating all remaining processes...');
+        await killAllTrackedProcesses();
+
+        resolve();
     });
 
-    // Ensure proper exit after cleanup
-    setTimeout(() => {
+    // Wait for cleanup to complete before exiting
+    cleanupPromise.then(() => {
         console.log('✅ Cleanup complete. Exiting...');
         process.exit(0);
-    }, 200);
+    });
 }
 
 process.on('SIGINT', cleanup);

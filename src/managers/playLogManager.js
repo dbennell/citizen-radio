@@ -4,7 +4,7 @@
 const fs = require('fs');
 const path = require('path');
 
-const PLAY_LOG = path.join(__dirname, 'play.log');
+const PLAY_LOG = path.join(__dirname, '../../data/play.log');
 const CACHE_LIMIT = 128; // How many of the newest rows we keep in memory
 let recentCache = []; // Chronological ring buffer (oldest → newest)
 

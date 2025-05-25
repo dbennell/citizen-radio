@@ -57,6 +57,7 @@
   "streamMode": "youtube",
   "youtube": {
     "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2",
+    "videoId": "juRkUQqA7sY",
     "updateMetadata": true,
     "createAutomatically": false
   },

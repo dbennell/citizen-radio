@@ -1,13 +1,13 @@
 const fs = require('fs');
 const path = require('path');
-const { pickNextTrack } = require('./trackManager');
-const { getLastPlays, appendPlayLog } = require('./playLogManager');
-const { generateSegway, prepareSegway } = require('./promptProcessor');
+const { pickNextTrack } = require('../managers/trackManager');
+const { getLastPlays, appendPlayLog } = require('../managers/playLogManager');
+const { generateSegway, prepareSegway } = require('../processors/promptProcessor');
 const { playFile, streamFile, getRandomCoverImage } = require('./streamer');
 const { STATION_CONFIG, READY_DIR } = require('./config');
 const chalk = require('chalk').default;
-const ratingManager = require('./ratingsManager');
-const { fetchLiveVideoId, extractMetadata, fetchLastChatComments } = require('./utils');
+const ratingManager = require('../managers/ratingsManager');
+const { fetchLiveVideoId, extractMetadata, fetchLastChatComments } = require('../utils');
 const { createCanvas, loadImage } = require('canvas'); // npm install canvas
 
 let shouldStop = false;

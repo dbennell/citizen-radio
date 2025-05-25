@@ -6,7 +6,7 @@ const path = require("path");
 
 function loadStationConfig() {
     try {
-        const configPath = path.join(__dirname, "station.json");
+        const configPath = path.join(__dirname, "../../config/default.json");
         const config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
         console.log(`Loaded station configuration: ${config.stationName}`);
         return config;
@@ -16,17 +16,17 @@ function loadStationConfig() {
     }
 }
 
-const BASE_DIR = __dirname;
+const PROJECT_ROOT = path.join(__dirname, '../..');
 const PROMPT_DIRS = {
-    ad:      path.join(BASE_DIR, 'prompts/ads'),
-    intro:   path.join(BASE_DIR, 'prompts/intros'),
-    dj:      path.join(BASE_DIR, 'prompts/dj'),
-    music:   path.join(BASE_DIR, 'prompts/music'),
-    podcast: path.join(BASE_DIR, 'prompts/podcast'),
-    image:   path.join(BASE_DIR, 'prompts/images'),
+    ad:      path.join(PROJECT_ROOT, 'assets/prompts/ads'),
+    intro:   path.join(PROJECT_ROOT, 'assets/prompts/intros'),
+    dj:      path.join(PROJECT_ROOT, 'assets/prompts/dj'),
+    music:   path.join(PROJECT_ROOT, 'assets/prompts/music'),
+    podcast: path.join(PROJECT_ROOT, 'assets/prompts/podcast'),
+    image:   path.join(PROJECT_ROOT, 'assets/prompts/images'),
 };
-const READY_DIR = type => path.join(BASE_DIR, `ready/${type}`);
-const PLAYED_DIR = type => path.join(BASE_DIR, `played/${type}`);
+const READY_DIR = type => path.join(PROJECT_ROOT, `data/ready/${type}`);
+const PLAYED_DIR = type => path.join(PROJECT_ROOT, `data/archive/${type}`);
 const STATION_CONFIG = loadStationConfig();
 
 

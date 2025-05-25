@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
-const { STATION_CONFIG } = require('./config');
+const { STATION_CONFIG } = require('../core/config');
 const ttsClient     = new TextToSpeechClient();
 const MAPPING_FILE  = path.join(__dirname, 'voiceMapping.json');
 
