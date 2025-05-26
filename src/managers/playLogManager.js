@@ -59,13 +59,27 @@ initializeCache();
 
 /* ───────────────────────── Public API ───────────────────────── */
 
-/** Append a play entry to both disk and memory (write-through cache). */
+/** 
+ * Append a play entry to both disk and memory (write-through cache).
+ * 
+ * Note: We strip unnecessary fields from the meta object to save space in the play log file.
+ * We only keep the title, artist, and genre fields, as these are the only ones needed for
+ * logging and display purposes. This helps reduce the size of the play log file, especially
+ * by removing large data like cover art image data.
+ */
 function appendPlayLog(relPath, type, meta) {
-    const entry = { timestamp: Date.now(), relPath, type, meta };
+    // Strip unneeded fields from meta to save space
+    const strippedMeta = {
+        title: meta.title || 'Unknown Title',
+        artist: meta.artist || 'Unknown Artist',
+        genre: meta.genre || ''
+    };
+
+    const entry = { timestamp: Date.now(), relPath, type, meta: strippedMeta };
 
     try {
         // Log the operation
-        console.log(`🪵 Logging play: ${meta.title} (${meta.artist || 'unknown artist'})`);
+        //console.log(`🪵 Logging play: ${meta.title} (${meta.artist || 'unknown artist'})`);
 
         // Write to disk
         fs.appendFileSync(PLAY_LOG, JSON.stringify(entry) + '\n');

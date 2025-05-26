@@ -312,6 +312,58 @@ function killAllTrackedProcesses() {
     });
 }
 
+/**
+ * Fetch the last N chat comments for display in the overlay
+ * Only returns messages that contain rating emojis to keep the chat clean
+ * @param {string} videoId - The YouTube video ID
+ * @param {number} maxComments - Maximum number of comments to fetch
+ * @returns {Promise<string[]>} - Array of comment text strings
+ */
+async function fetchLastChatComments(videoId, maxComments = 10) {
+    if (!videoId) {
+        console.warn('⚠️ No videoId provided for fetching chat comments');
+        return [];
+    }
+
+    try {
+        const messages = await readLiveChat(videoId);
+
+        // Import the emoji ratings from ratingsManager
+        const ratingManager = require('../managers/ratingsManager');
+        const EMOJI_RATINGS = {
+            // 1-star emojis (strong negative)
+            '🔇': 1, '😡': 1, '🤬': 1, '🤡': 1,
+            // 2-star emoji (dislike)
+            '👎': 2,
+            // 3-star emoji (neutral)
+            '🫳': 3,
+            // 4-star emoji (like)
+            '👍': 4,
+            // 5-star emojis (strong positive)
+            '❤️': 5, '😍': 5, '🥰': 5, '🤩': 5
+        };
+
+        // Extract text from messages, filter for those containing rating emojis, and limit to maxComments
+        return messages
+            .map(msg => msg.snippet.displayMessage || 
+                       msg.snippet.textMessageDetails?.messageText || '')
+            .filter(text => {
+                // Only keep messages that contain at least one rating emoji
+                if (text.trim() === '') return false;
+                for (const char of text) {
+                    if (EMOJI_RATINGS[char]) {
+                        return true;
+                    }
+                }
+                return false;
+            })
+            .slice(0, maxComments);
+    } catch (error) {
+        console.error('Error fetching chat comments:', error);
+        return [];
+    }
+}
+
 module.exports = {
     spawnTrackedProcess,
     extractMetadata,
@@ -319,5 +371,6 @@ module.exports = {
     killAllTrackedProcesses,
     runningProcesses,
     fetchLiveVideoId,
-    readLiveChat
+    readLiveChat,
+    fetchLastChatComments
 };

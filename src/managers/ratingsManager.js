@@ -4,8 +4,62 @@ const path = require('path');
 const { readLiveChat} = require('../utils');
 const { STATION_CONFIG } = require('../core/config'); // Fix the import to use destructuring
 //const { getPersistentVideoId } = require('./orchestrator');
+const feedbackManager = require('./feedbackManager');
+const engagementMonitor = require('./engagementMonitor');
 
 let commentWindow = { start: Date.now(), end: Date.now() };
+
+// Track processed message IDs to avoid duplicate processing
+let processedMessageIds = new Set();
+
+// Path to store processed message IDs between restarts
+const processedIdsPath = path.join(__dirname, '../../data/processed_message_ids.json');
+
+// Load processed message IDs from disk if available
+try {
+    if (fs.existsSync(processedIdsPath)) {
+        const data = JSON.parse(fs.readFileSync(processedIdsPath, 'utf8'));
+        processedMessageIds = new Set(data);
+        //console.log(`[Rating Debug] Loaded ${processedMessageIds.size} processed message IDs`);
+    }
+} catch (error) {
+    console.error('Error loading processed message IDs:', error);
+}
+
+// Save processed message IDs to disk
+function saveProcessedMessageIds() {
+    try {
+        // Limit the size of the set to prevent it from growing too large
+        // Keep only the most recent 10000 IDs
+        let idsArray = Array.from(processedMessageIds);
+        if (idsArray.length > 10000) {
+            idsArray = idsArray.slice(idsArray.length - 10000);
+            processedMessageIds = new Set(idsArray);
+        }
+
+        fs.writeFileSync(processedIdsPath, JSON.stringify(idsArray, null, 2));
+        return true;
+    } catch (error) {
+        console.error('Error saving processed message IDs:', error);
+        return false;
+    }
+}
+
+/**
+ * Clear all processed message IDs
+ * This is useful when the stream ends or when the application restarts
+ */
+function clearProcessedMessageIds() {
+    processedMessageIds.clear();
+    try {
+        fs.writeFileSync(processedIdsPath, JSON.stringify([], null, 2));
+        //console.log('[Rating Debug] Cleared processed message IDs');
+        return true;
+    } catch (error) {
+        console.error('Error clearing processed message IDs:', error);
+        return false;
+    }
+}
 
 // right after your imports, before any functions:
 const ratingPath = path.join(__dirname, '../../data/ratings.json');
@@ -27,9 +81,16 @@ function openCommentWindow() {
 
 /**
  * Marks the end of the comment‐collection window.
+ * Also clears the processed message IDs to prevent the set from growing too large.
  */
 function closeCommentWindow() {
     commentWindow.end = new Date();
+
+    // Clear processed message IDs when the window is closed
+    // This prevents the set from growing too large over time
+    // We don't need to keep track of processed messages from previous tracks
+    clearProcessedMessageIds();
+
     return commentWindow.end.toISOString();
 }
 
@@ -57,13 +118,23 @@ let currentlyPlaying = null;
 function setCurrentlyPlaying(trackInfo) {
     currentlyPlaying = {
         ...trackInfo,
-        rel: trackInfo.rel,
+        rel: trackInfo.trackRel || trackInfo.rel, // Support both trackRel (from orchestrator) and rel
         startTime: new Date()
     };
+
+    // Add debug logging to help diagnose issues
+    //console.log(`[Rating Debug] Now playing: ${currentlyPlaying.title} by ${currentlyPlaying.artist || 'Unknown'}`);
+    //console.log(`[Rating Debug] Track path: ${currentlyPlaying.rel}`);
 }
 
 /**
  * Load ratings from disk
+ * 
+ * Note: This function uses the legacy ratings.json file which is maintained for backward compatibility.
+ * The preferred method for storing ratings is now the per-track feedback files in /data/feedback/
+ * managed by the feedbackManager. This function is still used as a fallback and for compatibility
+ * with existing code.
+ * 
  * @returns {Object} - The ratings data
  */
 function loadRatings() {
@@ -81,6 +152,11 @@ function loadRatings() {
 
 /**
  * Save ratings to disk
+ * 
+ * Note: This function saves to the legacy ratings.json file which is maintained for backward compatibility.
+ * The preferred method for storing ratings is now the per-track feedback files in /data/feedback/
+ * managed by the feedbackManager. This function is still used for compatibility with existing code.
+ * 
  * @param {Object} ratings - The ratings data to save
  * @returns {boolean} - Success status
  */
@@ -115,16 +191,43 @@ function parseRatingFromComment(comment) {
     // Find the first emoji that matches our rating system
     for (const char of text) {
         if (EMOJI_RATINGS[char]) {
-            return {
+            const ratingData = {
                 value: EMOJI_RATINGS[char],
                 timestamp: publishedAt,
                 author: authorName,
                 comment: text
             };
+
+            // Process for noteworthy comments if enhanced engagement is enabled
+            if (STATION_CONFIG.enhancedEngagement?.enabled) {
+                processCommentForEngagement(ratingData);
+            }
+
+            return ratingData;
         }
     }
 
     return null;
+}
+
+/**
+ * Process a comment for the engagement monitor
+ * @param {Object} ratingData - Rating data with comment
+ */
+function processCommentForEngagement(ratingData) {
+    // Only process if we have the engagement monitor
+    if (!engagementMonitor) return;
+
+    // Format comment for engagement monitor
+    const commentData = {
+        author: ratingData.author,
+        comment: ratingData.comment,
+        rating: ratingData.value,
+        timestamp: ratingData.timestamp
+    };
+
+    // Process comment to check if it's noteworthy
+    engagementMonitor.processComment(commentData);
 }
 
 /**
@@ -182,6 +285,25 @@ function updateTrackRating(trackPath, ratingData) {
     }
 
     saveRatings(ratings);
+
+    // If metadata integration is enabled, also update feedback.json and MP3 metadata
+    if (STATION_CONFIG.metadataIntegration?.enabled) {
+        // Convert rating data to feedback format
+        const feedbackItem = {
+            author: ratingData.author || 'Anonymous',
+            comment: ratingData.comment || '',
+            rating: ratingData.value,
+            timestamp: ratingData.timestamp || new Date().toISOString()
+        };
+
+        // Add to feedback manager - ensure we're using the correct path format
+        // The trackPath might be a relative path like "music/Whiteout Sunrise.mp3"
+        // which is what we want for the feedback system
+        feedbackManager.addFeedback(trackPath, feedbackItem);
+
+        // Log feedback addition for debugging
+        console.log(`[Feedback Debug] Adding feedback for "${trackPath}" with rating ${ratingData.value}★`);
+    }
 }
 
 /**
@@ -211,14 +333,14 @@ async function pollForComments(videoId) {
         return 0;
     }
 
-    console.log(
-        `[Rating Debug] Window → start=${commentWindow.start?.toISOString() || '–'} ` +
-        `end=${commentWindow.end?.toISOString() || '–'}`
-    );
+    // console.log(
+    //     `[Rating Debug] Window → start=${commentWindow.start?.toISOString() || '–'} ` +
+    //     `end=${commentWindow.end?.toISOString() || '–'}`
+    // );
 
     // 1) Fetch raw chat
     const messages = await readLiveChat(videoId);
-    console.log(`[Rating Debug] Fetched ${messages.length} chat messages`);
+    //console.log(`[Rating Debug] Fetched ${messages.length} chat messages`);
 
     // 2) Dump them all with their timestamps
     messages.forEach((msg, idx) => {
@@ -226,23 +348,37 @@ async function pollForComments(videoId) {
             || msg.snippet.textMessageDetails?.messageText
             || '(no text)';
         const ts   = msg.snippet.publishedAt || '(no ts)';
-        console.log(`[Rating Debug] #${idx} → text="${text}" @ ${ts}`);
+        //console.log(`[Rating Debug] #${idx} → text="${text}" @ ${ts}`);
     });
 
     // 3) Process only those inside our window
     let processed = 0;
     const ratings = loadRatings();
+    let newMessagesProcessed = false;
 
     for (const msg of messages) {
+        // Skip if we've already processed this message
+        const messageId = msg.id;
+        if (!messageId || processedMessageIds.has(messageId)) {
+            continue;
+        }
+
         const publishedAt = msg.snippet.publishedAt;
         if (!publishedAt) continue;
 
         const commentTime = new Date(publishedAt);
-        const inWindow =
-            commentWindow.start instanceof Date &&
-            commentWindow.end   instanceof Date &&
-            commentTime >= commentWindow.start &&
-            commentTime <= commentWindow.end;
+
+        // For periodic polling during playback, we might not have an end time yet
+        const inWindow = commentWindow.start instanceof Date && 
+            (
+                // If we have an end time, check if the comment is within the window
+                (commentWindow.end instanceof Date && 
+                 commentTime >= commentWindow.start && 
+                 commentTime <= commentWindow.end) ||
+                // If we don't have an end time (during playback), just check if it's after the start
+                (!(commentWindow.end instanceof Date) && 
+                 commentTime >= commentWindow.start)
+            );
 
         const text = msg.snippet.displayMessage
             || msg.snippet.textMessageDetails?.messageText
@@ -254,6 +390,8 @@ async function pollForComments(videoId) {
         const rating = parseRatingFromComment(msg);
         if (!rating) {
             //console.log('[Rating Debug] No rating emoji found');
+            // Still mark this message as processed even if it doesn't contain a rating
+            processedMessageIds.add(messageId);
             continue;
         }
         console.log(`[Rating Debug] Detected ${rating.value}★ by ${rating.author} → "${text}"`);
@@ -262,6 +400,8 @@ async function pollForComments(videoId) {
         const match = matchRatingToTrack(rating);
         if (!match) {
             //console.log('[Rating Debug] Outside actual play time; skipping');
+            // Still mark this message as processed
+            processedMessageIds.add(messageId);
             continue;
         }
 
@@ -281,27 +421,46 @@ async function pollForComments(videoId) {
             ratings[key].averageRating = sum / ratings[key].ratingCount;
             ratings[key].lastUpdated   = rating.timestamp;
         }
-        // console.log(
-        //     `[Rating Debug] ➤ Updated "${key}" → ` +
-        //     `avg=${ratings[key].averageRating.toFixed(2)} ` +
-        //     `(${ratings[key].ratingCount} ratings)`
-        // );
 
+        // 6.5) Also update the feedback.json file directly
+        updateTrackRating(key, rating);
+
+        console.log(
+            `[Rating Debug] ➤ Updated "${key}" → ` +
+            `avg=${ratings[key].averageRating.toFixed(2)} ` +
+            `(${ratings[key].ratingCount} ratings)`
+        );
+
+        // Mark this message as processed
+        processedMessageIds.add(messageId);
+        newMessagesProcessed = true;
         processed++;
     }
 
-    // 7) Persist and confirm
-    if (saveRatings(ratings)) {
-        // console.log(
-        //     `[Rating Debug] Wrote ratings.json with ` +
-        //     `${Object.keys(ratings).length} entries`
-        // );
-    } else {
-        console.error('💥 Could not save ratings.json');
+    // 7) Persist and confirm - only if we processed new messages
+    if (newMessagesProcessed) {
+        if (saveRatings(ratings)) {
+            console.log(
+                `[Rating Debug] Wrote ratings.json with ` +
+                `${Object.keys(ratings).length} entries`
+            );
+        } else {
+            console.error('💥 Could not save ratings.json');
+        }
     }
 
-    // 8) Clear window
-    commentWindow.start = commentWindow.end = null;
+    // Save processed message IDs if we processed any new messages
+    if (newMessagesProcessed) {
+        saveProcessedMessageIds();
+    }
+
+    // Only clear the window if we're at the end of the track
+    // (when closeCommentWindow has been called)
+    if (commentWindow.end instanceof Date) {
+        // 8) Clear window
+        commentWindow.start = commentWindow.end = null;
+    }
+
     return processed;
 }
 
@@ -312,8 +471,17 @@ async function pollForComments(videoId) {
  * @returns {number|null} - The average rating or null if not rated
  */
 function getRatingForTrack(trackPath) {
+    // First check in-memory ratings
     const ratings = loadRatings();
-    return ratings[trackPath]?.averageRating || null;
+    const inMemoryRating = ratings[trackPath]?.averageRating;
+
+    // If metadata integration is enabled and no in-memory rating, try metadata
+    if (inMemoryRating === undefined && STATION_CONFIG.metadataIntegration?.enabled) {
+        const metadataRating = feedbackManager.getRatingWithFallback(trackPath);
+        return metadataRating?.rating || null;
+    }
+
+    return inMemoryRating || null;
 }
 
 module.exports = {
@@ -328,4 +496,7 @@ module.exports = {
     openCommentWindow,
     closeCommentWindow,
     pollForComments,
+    saveProcessedMessageIds,
+    clearProcessedMessageIds,
+    EMOJI_RATINGS,
 };

@@ -109,18 +109,22 @@ function startYouTubeStreamer() {
           "44100",
           "-ac",
           "2",
-          "-thread_queue_size", "8192",  // Increased thread queue size
+          "-thread_queue_size", "16384",  // Further increased thread queue size for smoother transitions
           "-i",
           "pipe:0",
           "-c:a",
           "pcm_s16le",
           "-f",
           "s16le",
-          "-bufsize", "16384k",  // Increased buffer size
+          "-bufsize", "32768k",  // Further increased buffer size for smoother transitions
+          "-flush_packets", "1", // Flush packets immediately for smoother transitions
           fifoPath,
         ],
         { stdio: ["pipe", "inherit", "inherit"] },
       );
+
+      // Increase max listeners to prevent warnings
+      audioBufferProc.setMaxListeners(20);
 
       audioBufferProc.on("close", (code) => {
         console.warn(`Audio buffer process exited unexpectedly with code: ${code}`);
@@ -181,14 +185,14 @@ function startYouTubeStreamer() {
                 "-i", "/tmp/current_overlay.png",  // Use symbolic link to allow image updates
 
                 // ───────── Buffering ─────────
-                "-thread_queue_size", "8192", // bigger buffer on next input
+                "-thread_queue_size", "16384", // Further increased thread queue size for smoother video transitions
 
                 // ───────── Audio ─────────
                 "-re",
                 "-f", "s16le",
                 "-ar", "44100",
                 "-ac", "2",
-                "-thread_queue_size", "8192", // Increased thread queue size for audio
+                "-thread_queue_size", "16384", // Further increased thread queue size for smoother audio transitions
                 "-i", fifoPath,
 
                 // ───────── Encoders & Filters ─────────
@@ -202,7 +206,7 @@ function startYouTubeStreamer() {
                 // bump your bitrates into YouTube's sweet spot
                 "-b:v", "4000k",
                 "-maxrate", "4000k",
-                "-bufsize", "16384k",        // Increased buffer size
+                "-bufsize", "32768k",        // Further increased buffer size for smoother transitions
 
                 // Explicitly map video and audio streams
                 "-map", "0:v",
@@ -220,6 +224,7 @@ function startYouTubeStreamer() {
                 "-max_interleave_delta", "0", // Don't delay packets for interleaving
                 "-fflags", "+nobuffer",       // Reduce buffering
                 "-flags", "+low_delay",       // Low delay mode
+                "-flush_packets", "1",        // Flush packets immediately for smoother transitions
 
                 // ───────── Output ─────────
                 "-f", "flv",
@@ -233,6 +238,8 @@ function startYouTubeStreamer() {
             { stdio: ["ignore", "inherit", "inherit"] },
         );
 
+        // Increase max listeners to prevent warnings
+        youtubeStreamer.setMaxListeners(20);
 
 
         youtubeStreamer.on("close", (code) => {
@@ -431,12 +438,16 @@ async function streamFile(file) {
         "44100",
         "-ac",
         "2",
-        "-bufsize", "8192k",  // Match buffer size with other processes
-        "-thread_queue_size", "4096",  // Increase thread queue size
+        "-bufsize", "16384k",  // Increased buffer size for smoother transitions
+        "-thread_queue_size", "8192",  // Increased thread queue size for better buffering
+        "-flush_packets", "1", // Flush packets immediately for smoother transitions
         "pipe:1",
       ],
       { stdio: ["ignore", "pipe", "inherit"] },
     );
+
+    // Increase max listeners to prevent warnings
+    ff.stdout.setMaxListeners(20);
 
     // Function to handle cleanup
     const cleanupAndReject = (error) => {
@@ -510,7 +521,8 @@ async function streamFile(file) {
       // Handle pipe errors gracefully
       pipeStream = ff.stdout.pipe(ffmpegStdin, { end: false });
 
-      pipeStream.on('error', (err) => {
+      // Use once instead of on to prevent memory leaks
+      pipeStream.once('error', (err) => {
         cleanupAndReject(new Error(`Pipe stream error: ${err.message}`));
       });
 
@@ -535,13 +547,16 @@ async function streamFile(file) {
       resetPipeTimeout();
 
       // Monitor data flow from the FFmpeg process's stdout
-      ff.stdout.on('data', () => {
+      const dataListener = () => {
         lastDataTime = Date.now();
-      });
+      };
+      ff.stdout.on('data', dataListener);
 
-      // Clear the timeout when the stream ends normally
+      // Clear the timeout and remove listeners when the stream ends normally
       ff.once('close', () => {
         if (pipeTimeout) clearTimeout(pipeTimeout);
+        // Remove the data listener to prevent memory leaks
+        ff.stdout.removeListener('data', dataListener);
       });
 
     } catch (err) {

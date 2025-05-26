@@ -25,6 +25,12 @@ The system is built with a modular design consisting of several key components:
 - : Handles FFmpeg pipelines for audio/video streaming **streamer.js**
 - : Assigns and persists voice profiles for characters **voiceManager.js**
 - : Converts text to speech and processes audio files **audioSynthesizer.js**
+- : Collects and manages user ratings for tracks **ratingsManager.js**
+- : Processes ratings data to generate insights and trends **analyticsEngine.js**
+- : Provides actionable content recommendations based on analytics **recommendationSystem.js**
+- : Manages per-track feedback and sentiment analysis **feedbackManager.js**
+- : Analyzes comment sentiment to generate human-readable summaries **sentimentAnalyzer.js**
+- : Monitors chat for noteworthy comments to reference in segways **engagementMonitor.js**
 
 ## How It Works
 1. **Station Configuration**: Defines station identity, DJ personality, scheduling patterns, and voice profiles
@@ -36,6 +42,15 @@ The system is built with a modular design consisting of several key components:
 
 4. **Audio Processing**: All content is processed with proper audio normalization and transitions
 5. **Streaming**: Content is seamlessly piped into the YouTube live stream with synchronized visuals
+6. **Listener Engagement**:
+    - Collects ratings and comments from live chat
+    - Stores feedback in both JSON files and MP3 metadata
+    - Analyzes sentiment in comments to generate summaries
+    - References noteworthy listener comments in DJ segways
+7. **Analytics & Recommendations**:
+    - Processes ratings to identify trends and outliers
+    - Generates actionable recommendations for content selection
+    - Provides insights into audience preferences
 
 ## Stream Components
 - **Music Tracks**: Plays music files from the ready/music directory
@@ -47,6 +62,10 @@ The system is built with a modular design consisting of several key components:
 - **Images**: Artwork displayed on the stream, rotated periodically
 - **Live Chat Integration**: Displays YouTube live chat comments on the stream
 - **Rating System**: Collects and displays user ratings for music tracks
+- **Analytics Engine**: Processes user ratings to generate insights and trends
+- **Recommendation System**: Provides actionable content recommendations based on analytics
+- **MP3 Metadata Integration**: Stores ratings and sentiment in MP3 file metadata
+- **Enhanced Engagement**: Acknowledges listener feedback during broadcasts
 
 ## Technologies Used
 - : Core application runtime environment **Node.js**
@@ -135,7 +154,6 @@ citizen-radio/
      {
        "stationName": "Your Station Name",
        "djName": "Your DJ Name",
-       "imageInterval": 480,
        "uptimeHours": null,
        "uptimeMode": "track",
        "vibe": "Description of your station's vibe and personality",
@@ -225,7 +243,6 @@ citizen-radio/
 #### Basic Settings
 - `stationName`: Name of your radio station
 - `djName`: Name of the main DJ persona
-- `imageInterval`: How often to rotate cover images (in seconds)
 - `uptimeHours`: use 'null' for never stop or a number in hours
 - `uptimeMode`: when we do end/exit should we wait for the end of full cycle or just the next track
 - `debug`: Enable debug mode (keeps temporary files)

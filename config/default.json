@@ -1,7 +1,6 @@
 {
   "stationName": "Radio Arc-Corp",
   "djName": "DJ Quantum",
-  "imageInterval": 480,
   "uptimeHours": null,
   "uptimeMode": "track",
   "trackHistory": {
@@ -57,7 +56,6 @@
   "streamMode": "youtube",
   "youtube": {
     "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2",
-    "videoId": "juRkUQqA7sY",
     "updateMetadata": true,
     "createAutomatically": false
   },
@@ -68,10 +66,48 @@
     "maxTickets": 5,
     "ratingPersistence": true,
     "displayOnStream": true,
-    "streamDelay": 0
+    "streamDelay": 0,
+    "commentCheckInterval": 6
   },
   "contentQueue": {
-    "minQueueSize": 3,
-    "maxQueueSize": 8
+    "minQueueSize": 2,
+    "maxQueueSize": 4
+  },
+  "analyticsEngine": {
+    "enabled": true,
+    "processingInterval": 3600000,
+    "minRatingsThreshold": 3,
+    "outlierThreshold": 2,
+    "topBottomListSize": 10,
+    "trendingTimeframe": 7
+  },
+  "recommendationSystem": {
+    "enabled": true,
+    "confidenceThreshold": 0.7,
+    "maxRecommendations": 20,
+    "refreshInterval": 86400000
+  },
+  "metadataIntegration": {
+    "enabled": true,
+    "updateThreshold": 5,
+    "maxFeedbackPerTrack": 128,
+    "sentimentAnalysis": true,
+    "fallbackToFile": true
+  },
+  "enhancedEngagement": {
+    "enabled": true,
+    "maxStoredComments": 5,
+    "commentExpirationMinutes": 30,
+    "minSignificanceThreshold": 0.6,
+    "keywordWeights": {
+      "love": 0.8,
+      "amazing": 0.7,
+      "awesome": 0.7,
+      "favorite": 0.9,
+      "terrible": 0.8,
+      "worst": 0.8
+    },
+    "ratingWeight": 0.5,
+    "segwayReferenceChance": 0.7
   }
 }

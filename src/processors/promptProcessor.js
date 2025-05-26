@@ -17,6 +17,7 @@ const OpenAI = require("openai");
 const textToSpeech = require("@google-cloud/text-to-speech");
 const tracksManager  = require("../managers/trackManager");
 const ratingManager = require('../managers/ratingsManager');
+const engagementMonitor = require('../managers/engagementMonitor');
 
 const { PROMPT_DIRS, READY_DIR, STATION_CONFIG } = require("../core/config");
 
@@ -434,6 +435,29 @@ async function generateSegway(prevMeta, nextMeta) {
             const prompt = `${basePrompt}${funnySuffix}`;
 
 
+            // Get noteworthy listener comment if available
+            let listenerFeedback = '';
+            const noteworthyComment = engagementMonitor.getCommentForSegway();
+
+            if (noteworthyComment) {
+                listenerFeedback = `
+                Listener Feedback:
+                - Username: "${noteworthyComment.author}"
+                - Comment: "${noteworthyComment.comment}"
+                - Rating: ${noteworthyComment.rating > 0 ? noteworthyComment.rating : 'None'}
+
+                Important: Incorporate this listener feedback naturally into your segway if possible.
+                `;
+
+                // Mark comment as referenced
+                const commentIndex = engagementMonitor.getNoteworthyComments().findIndex(
+                    c => c.comment === noteworthyComment.comment && c.author === noteworthyComment.author
+                );
+                if (commentIndex >= 0) {
+                    engagementMonitor.markCommentReferenced(commentIndex);
+                }
+            }
+
             // Create a focused prompt for music-to-music transition
             const userPrompt = `
                 You are a lively and enthusiastic DJ on a galactic space station.
@@ -455,6 +479,27 @@ async function generateSegway(prevMeta, nextMeta) {
                 ${nextMeta?.genre ? `- Genre: ${nextMeta.genre}` : ''}
                 ${nextMeta?.comment ? `- Note: ${nextMeta.comment}` : ''}
                 ${nextRatingInfo}
+
+                ${STATION_CONFIG.enhancedEngagement?.enabled ? 
+                  (() => {
+                    const comment = engagementMonitor.getCommentForSegway();
+                    if (comment) {
+                      // Mark comment as referenced
+                      const index = engagementMonitor.getNoteworthyComments().findIndex(
+                        c => c.comment === comment.comment && c.author === comment.author
+                      );
+                      if (index >= 0) engagementMonitor.markCommentReferenced(index);
+
+                      return `Listener Feedback:
+                - Username: "${comment.author}"
+                - Comment: "${comment.comment}"
+                - Rating: ${comment.rating > 0 ? comment.rating : 'None'}
+
+                Important: Incorporate this listener feedback naturally into your segway if possible.`;
+                    }
+                    return '';
+                  })() 
+                  : ''}
 
                 Task:
                 Create a short, natural DJ-style transition from the previous track to the next.
@@ -541,6 +586,27 @@ async function generateSegway(prevMeta, nextMeta) {
             ${nextMeta?.album ? `- Album: ${nextMeta.album}` : ''}
             ${nextMeta?.genre ? `- Genre: ${nextMeta.genre}` : ''}
             ${nextMeta?.comment ? `- Note: ${nextMeta.comment}` : ''}
+
+            ${STATION_CONFIG.enhancedEngagement?.enabled ? 
+              (() => {
+                const comment = engagementMonitor.getCommentForSegway();
+                if (comment) {
+                  // Mark comment as referenced
+                  const index = engagementMonitor.getNoteworthyComments().findIndex(
+                    c => c.comment === comment.comment && c.author === comment.author
+                  );
+                  if (index >= 0) engagementMonitor.markCommentReferenced(index);
+
+                  return `Listener Feedback:
+            - Username: "${comment.author}"
+            - Comment: "${comment.comment}"
+            - Rating: ${comment.rating > 0 ? comment.rating : 'None'}
+
+            Important: Incorporate this listener feedback naturally into your segway if possible.`;
+                }
+                return '';
+              })() 
+              : ''}
 
             Task:
             Create a short, natural DJ-style transition from the previous track to the next.
