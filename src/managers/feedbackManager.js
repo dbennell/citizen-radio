@@ -213,6 +213,42 @@ function updateTrackMetadata(trackPath, feedbackData) {
         // Read existing tags
         const tags = NodeID3.read(fullPath) || {};
 
+        // Helper function to get a custom frame value
+        const getCustomFrame = (description) => {
+            if (!tags.userDefinedText) return null;
+            const frame = tags.userDefinedText.find(
+                frame => frame.description === description
+            );
+            return frame ? frame.text : null;
+        };
+
+        // Get existing rating information
+        const existingRating = getCustomFrame('RATING') ? parseFloat(getCustomFrame('RATING')) : null;
+        const existingCount = getCustomFrame('RATING_COUNT') ? parseInt(getCustomFrame('RATING_COUNT'), 10) : 0;
+
+        // Calculate new rating by merging with existing
+        let newRating, newCount;
+
+        if (existingRating && existingCount > 0) {
+            // If we have existing ratings, calculate weighted average
+            const existingTotal = existingRating * existingCount;
+            const newTotal = feedbackData.currentRating * feedbackData.feedbackCount;
+            newCount = existingCount + feedbackData.feedbackCount;
+            newRating = (existingTotal + newTotal) / newCount;
+
+            if (STATION_CONFIG.debug) {
+                console.log(`[Feedback Debug] Merging ratings: existing=${existingRating.toFixed(1)} (${existingCount}), new=${feedbackData.currentRating.toFixed(1)} (${feedbackData.feedbackCount}), result=${newRating.toFixed(1)} (${newCount})`);
+            }
+        } else {
+            // If no existing ratings, use the new ones
+            newRating = feedbackData.currentRating;
+            newCount = feedbackData.feedbackCount;
+
+            if (STATION_CONFIG.debug) {
+                console.log(`[Feedback Debug] No existing ratings, using new: ${newRating.toFixed(1)} (${newCount})`);
+            }
+        }
+
         // Update custom frames with rating data
         tags.userDefinedText = tags.userDefinedText || [];
 
@@ -232,9 +268,9 @@ function updateTrackMetadata(trackPath, feedbackData) {
             }
         };
 
-        // Update rating information
-        updateCustomFrame('RATING', feedbackData.currentRating.toFixed(1));
-        updateCustomFrame('RATING_COUNT', feedbackData.feedbackCount.toString());
+        // Update rating information with merged values
+        updateCustomFrame('RATING', newRating.toFixed(1));
+        updateCustomFrame('RATING_COUNT', newCount.toString());
         updateCustomFrame('SENTIMENT', feedbackData.sentimentSummary);
         updateCustomFrame('LAST_UPDATED', feedbackData.lastUpdated);
 
@@ -307,7 +343,7 @@ function readRatingFromMetadata(trackPath) {
 }
 
 /**
- * Get rating with fallback to feedback.json if metadata is unavailable
+ * Get rating with fallback to feedback.json if metadata is unavailable and fallbackToFile is enabled
  * @param {string} trackPath - Path to the track
  * @returns {Object|null} - Rating data or null if not available
  */
@@ -318,15 +354,25 @@ function getRatingWithFallback(trackPath) {
         return metadataRating;
     }
 
-    // Fall back to feedback.json
-    const feedbackData = loadFeedback(trackPath);
-    if (feedbackData && feedbackData.feedbackCount > 0) {
-        return {
-            rating: feedbackData.currentRating,
-            count: feedbackData.feedbackCount,
-            sentiment: feedbackData.sentimentSummary,
-            lastUpdated: feedbackData.lastUpdated
-        };
+    // Only fall back to feedback.json if fallbackToFile is enabled
+    if (STATION_CONFIG.metadataIntegration?.fallbackToFile) {
+        // Only log when debug mode is enabled
+        if (STATION_CONFIG.debug) {
+            console.log(`[Feedback Debug] Metadata not available for "${trackPath}", falling back to feedback.json`);
+        }
+
+        // Fall back to feedback.json
+        const feedbackData = loadFeedback(trackPath);
+        if (feedbackData && feedbackData.feedbackCount > 0) {
+            return {
+                rating: feedbackData.currentRating,
+                count: feedbackData.feedbackCount,
+                sentiment: feedbackData.sentimentSummary,
+                lastUpdated: feedbackData.lastUpdated
+            };
+        }
+    } else if (STATION_CONFIG.debug) {
+        console.log(`[Feedback Debug] Metadata not available for "${trackPath}" and fallbackToFile is disabled`);
     }
 
     return null;

@@ -6,6 +6,8 @@ const { STATION_CONFIG } = require('../core/config'); // Fix the import to use d
 //const { getPersistentVideoId } = require('./orchestrator');
 const feedbackManager = require('./feedbackManager');
 const engagementMonitor = require('./engagementMonitor');
+const sentimentAnalyzer = require('../utils/sentimentAnalyzer');
+const NodeID3 = require('node-id3');
 
 let commentWindow = { start: Date.now(), end: Date.now() };
 
@@ -130,11 +132,6 @@ function setCurrentlyPlaying(trackInfo) {
 /**
  * Load ratings from disk
  * 
- * Note: This function uses the legacy ratings.json file which is maintained for backward compatibility.
- * The preferred method for storing ratings is now the per-track feedback files in /data/feedback/
- * managed by the feedbackManager. This function is still used as a fallback and for compatibility
- * with existing code.
- * 
  * @returns {Object} - The ratings data
  */
 function loadRatings() {
@@ -152,10 +149,6 @@ function loadRatings() {
 
 /**
  * Save ratings to disk
- * 
- * Note: This function saves to the legacy ratings.json file which is maintained for backward compatibility.
- * The preferred method for storing ratings is now the per-track feedback files in /data/feedback/
- * managed by the feedbackManager. This function is still used for compatibility with existing code.
  * 
  * @param {Object} ratings - The ratings data to save
  * @returns {boolean} - Success status
@@ -190,9 +183,17 @@ function parseRatingFromComment(comment) {
 
     // Find the first emoji that matches our rating system
     for (const char of text) {
-        if (EMOJI_RATINGS[char]) {
+        // Need to handle different Unicode representations of emojis
+        // But be more precise to avoid false positives with invisible characters
+        const matchingEmoji = Object.keys(EMOJI_RATINGS).find(emoji => 
+            emoji === char || 
+            (emoji.includes(char) && char.trim() !== '') || 
+            (char.includes(emoji) && emoji.trim() !== '')
+        );
+
+        if (matchingEmoji) {
             const ratingData = {
-                value: EMOJI_RATINGS[char],
+                value: EMOJI_RATINGS[matchingEmoji],
                 timestamp: publishedAt,
                 author: authorName,
                 comment: text
@@ -286,24 +287,34 @@ function updateTrackRating(trackPath, ratingData) {
 
     saveRatings(ratings);
 
-    // If metadata integration is enabled, also update feedback.json and MP3 metadata
-    if (STATION_CONFIG.metadataIntegration?.enabled) {
-        // Convert rating data to feedback format
-        const feedbackItem = {
-            author: ratingData.author || 'Anonymous',
-            comment: ratingData.comment || '',
-            rating: ratingData.value,
-            timestamp: ratingData.timestamp || new Date().toISOString()
-        };
+    // Log the rating for debugging
+    console.log(`[Rating Debug] Added rating ${ratingData.value}★ for "${trackPath}" (${ratings[trackPath].ratingCount} total ratings)`);
 
-        // Add to feedback manager - ensure we're using the correct path format
-        // The trackPath might be a relative path like "music/Whiteout Sunrise.mp3"
-        // which is what we want for the feedback system
-        feedbackManager.addFeedback(trackPath, feedbackItem);
+    // Check if we've reached the updateThreshold or maxFeedbackPerTrack threshold
+    const updateThreshold = STATION_CONFIG.metadataIntegration?.updateThreshold || 5;
+    const maxFeedback = STATION_CONFIG.metadataIntegration?.maxFeedbackPerTrack || 25;
 
-        // Log feedback addition for debugging
-        console.log(`[Feedback Debug] Adding feedback for "${trackPath}" with rating ${ratingData.value}★`);
+    if (STATION_CONFIG.metadataIntegration?.enabled && 
+        (ratings[trackPath].ratingCount >= updateThreshold || ratings[trackPath].ratingCount >= maxFeedback)) {
+
+        if (ratings[trackPath].ratingCount >= maxFeedback) {
+            console.log(`[Rating Debug] Reached maxFeedbackPerTrack (${maxFeedback}) for "${trackPath}". Processing ratings...`);
+        } else {
+            console.log(`[Rating Debug] Reached updateThreshold (${updateThreshold}) for "${trackPath}". Processing ratings...`);
+        }
+
+        // Process ratings and update MP3 metadata
+        processRatingsAndUpdateMetadata(trackPath, ratings[trackPath]);
+
+        // Clear ratings from ratings.json after processing
+        clearProcessedRatings(trackPath);
+    } else if (STATION_CONFIG.metadataIntegration?.enabled) {
+        // If we haven't reached the threshold, still log the feedback for debugging
+        console.log(`[Feedback Debug] Adding feedback for "${trackPath}" with rating ${ratingData.value}★ (${ratings[trackPath].ratingCount}/${updateThreshold})`);
     }
+
+    // Note: We no longer use the feedbackManager to store per-track feedback files
+    // All ratings are now stored in ratings.json and processed in batches when reaching maxFeedbackPerTrack
 }
 
 /**
@@ -353,7 +364,6 @@ async function pollForComments(videoId) {
 
     // 3) Process only those inside our window
     let processed = 0;
-    const ratings = loadRatings();
     let newMessagesProcessed = false;
 
     for (const msg of messages) {
@@ -405,30 +415,16 @@ async function pollForComments(videoId) {
             continue;
         }
 
-        // 6) Update in-memory ratings
+        // 6) Update the ratings in the feedback.json file
         const key = match.track;
-        if (!ratings[key]) {
-            ratings[key] = {
-                averageRating: rating.value,
-                ratingCount: 1,
-                lastUpdated: rating.timestamp,
-                ratings: [rating]
-            };
-        } else {
-            ratings[key].ratings.push(rating);
-            const sum = ratings[key].ratings.reduce((a, r) => a + r.value, 0);
-            ratings[key].ratingCount   = ratings[key].ratings.length;
-            ratings[key].averageRating = sum / ratings[key].ratingCount;
-            ratings[key].lastUpdated   = rating.timestamp;
-        }
-
-        // 6.5) Also update the feedback.json file directly
         updateTrackRating(key, rating);
 
+        // Reload ratings to get the updated values for logging
+        const updatedRatings = loadRatings();
         console.log(
             `[Rating Debug] ➤ Updated "${key}" → ` +
-            `avg=${ratings[key].averageRating.toFixed(2)} ` +
-            `(${ratings[key].ratingCount} ratings)`
+            `avg=${updatedRatings[key].averageRating.toFixed(2)} ` +
+            `(${updatedRatings[key].ratingCount} ratings)`
         );
 
         // Mark this message as processed
@@ -437,19 +433,7 @@ async function pollForComments(videoId) {
         processed++;
     }
 
-    // 7) Persist and confirm - only if we processed new messages
-    if (newMessagesProcessed) {
-        if (saveRatings(ratings)) {
-            console.log(
-                `[Rating Debug] Wrote ratings.json with ` +
-                `${Object.keys(ratings).length} entries`
-            );
-        } else {
-            console.error('💥 Could not save ratings.json');
-        }
-    }
-
-    // Save processed message IDs if we processed any new messages
+    // 7) Save processed message IDs if we processed any new messages
     if (newMessagesProcessed) {
         saveProcessedMessageIds();
     }
@@ -471,17 +455,162 @@ async function pollForComments(videoId) {
  * @returns {number|null} - The average rating or null if not rated
  */
 function getRatingForTrack(trackPath) {
-    // First check in-memory ratings
-    const ratings = loadRatings();
-    const inMemoryRating = ratings[trackPath]?.averageRating;
+    // If metadata integration is enabled, always try to get rating from MP3 metadata first
+    if (STATION_CONFIG.metadataIntegration?.enabled) {
+        // Try to get rating directly from MP3 metadata
+        const metadataRating = feedbackManager.readRatingFromMetadata(trackPath);
 
-    // If metadata integration is enabled and no in-memory rating, try metadata
-    if (inMemoryRating === undefined && STATION_CONFIG.metadataIntegration?.enabled) {
-        const metadataRating = feedbackManager.getRatingWithFallback(trackPath);
-        return metadataRating?.rating || null;
+        if (metadataRating) {
+            return metadataRating.rating;
+        }
+
+        // If fallbackToFile is enabled and metadata is not available, try ratings.json
+        if (STATION_CONFIG.metadataIntegration?.fallbackToFile) {
+            const ratings = loadRatings();
+            const inMemoryRating = ratings[trackPath]?.averageRating;
+
+            if (inMemoryRating !== undefined) {
+                return inMemoryRating;
+            }
+        }
+
+        return null;
     }
 
-    return inMemoryRating || null;
+    // If metadata integration is disabled, use ratings.json
+    const ratings = loadRatings();
+    return ratings[trackPath]?.averageRating || null;
+}
+
+/**
+ * Process ratings and update MP3 metadata
+ * @param {string} trackPath - Path to the track
+ * @param {Object} ratingsData - Ratings data for the track
+ * @returns {boolean} - Success status
+ */
+function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
+    try {
+        // Check if file exists and is an MP3
+        const fullPath = path.resolve(trackPath);
+        if (!fs.existsSync(fullPath) || !fullPath.toLowerCase().endsWith('.mp3')) {
+            console.error(`File not found or not an MP3: ${fullPath}`);
+            return false;
+        }
+
+        // Read existing tags
+        const tags = NodeID3.read(fullPath) || {};
+
+        // Helper function to get a custom frame value
+        const getCustomFrame = (description) => {
+            if (!tags.userDefinedText) return null;
+            const frame = tags.userDefinedText.find(
+                frame => frame.description === description
+            );
+            return frame ? frame.text : null;
+        };
+
+        // Get existing rating information
+        const existingRating = getCustomFrame('RATING') ? parseFloat(getCustomFrame('RATING')) : null;
+        const existingCount = getCustomFrame('RATING_COUNT') ? parseInt(getCustomFrame('RATING_COUNT'), 10) : 0;
+
+        // Calculate new rating by merging with existing
+        let newRating, newCount;
+
+        if (existingRating && existingCount > 0) {
+            // If we have existing ratings, calculate weighted average
+            const existingTotal = existingRating * existingCount;
+            const newTotal = ratingsData.averageRating * ratingsData.ratingCount;
+            newCount = existingCount + ratingsData.ratingCount;
+            newRating = (existingTotal + newTotal) / newCount;
+            console.log(`[Rating Debug] Merging ratings: existing=${existingRating.toFixed(1)} (${existingCount}), new=${ratingsData.averageRating.toFixed(1)} (${ratingsData.ratingCount}), result=${newRating.toFixed(1)} (${newCount})`);
+        } else {
+            // If no existing ratings, use the new ones
+            newRating = ratingsData.averageRating;
+            newCount = ratingsData.ratingCount;
+            console.log(`[Rating Debug] No existing ratings, using new: ${newRating.toFixed(1)} (${newCount})`);
+        }
+
+        // Perform sentiment analysis on the comments
+        const sentimentResult = sentimentAnalyzer.analyzeSentiment(ratingsData.ratings);
+        const sentimentSummary = sentimentResult.summary;
+
+        // Update custom frames with rating data
+        tags.userDefinedText = tags.userDefinedText || [];
+
+        // Helper function to update or add a custom frame
+        const updateCustomFrame = (description, text) => {
+            const existingIndex = tags.userDefinedText.findIndex(
+                frame => frame.description === description
+            );
+
+            if (existingIndex >= 0) {
+                tags.userDefinedText[existingIndex].text = text;
+            } else {
+                tags.userDefinedText.push({
+                    description: description,
+                    text: text
+                });
+            }
+        };
+
+        // Update rating information
+        updateCustomFrame('RATING', newRating.toFixed(1));
+        updateCustomFrame('RATING_COUNT', newCount.toString());
+        updateCustomFrame('SENTIMENT', sentimentSummary);
+        updateCustomFrame('LAST_UPDATED', new Date().toISOString());
+
+        // Write tags back to file
+        const success = NodeID3.update(tags, fullPath);
+
+        if (success) {
+            console.log(`[Rating Debug] Updated metadata for "${trackPath}" with rating ${newRating.toFixed(1)}★ (${newCount} ratings)`);
+            console.log(`[Rating Debug] Sentiment summary: "${sentimentSummary}"`);
+            return true;
+        } else {
+            console.error(`[Rating Debug] Failed to update metadata for "${trackPath}"`);
+            return false;
+        }
+    } catch (error) {
+        console.error(`[Rating Debug] Error updating metadata for "${trackPath}":`, error);
+        return false;
+    }
+}
+
+/**
+ * Clear processed ratings from ratings.json
+ * @param {string} trackPath - Path to the track
+ * @returns {boolean} - Success status
+ */
+function clearProcessedRatings(trackPath) {
+    try {
+        const ratings = loadRatings();
+
+        if (!ratings[trackPath]) {
+            console.warn(`[Rating Debug] No ratings found for "${trackPath}" to clear`);
+            return false;
+        }
+
+        // Keep only the most recent 5 ratings for display purposes
+        const recentRatings = ratings[trackPath].ratings.slice(0, 5);
+
+        // Update the ratings object
+        ratings[trackPath] = {
+            averageRating: ratings[trackPath].averageRating,
+            ratingCount: recentRatings.length,
+            lastUpdated: new Date().toISOString(),
+            ratings: recentRatings,
+            processedAt: new Date().toISOString() // Add a marker to indicate this track has been processed
+        };
+
+        // Save the updated ratings
+        saveRatings(ratings);
+
+        console.log(`[Rating Debug] Cleared processed ratings for "${trackPath}", keeping ${recentRatings.length} recent ratings`);
+        return true;
+    } catch (error) {
+        console.error(`[Rating Debug] Error clearing processed ratings for "${trackPath}":`, error);
+        return false;
+    }
 }
 
 module.exports = {
@@ -498,5 +627,7 @@ module.exports = {
     pollForComments,
     saveProcessedMessageIds,
     clearProcessedMessageIds,
+    processRatingsAndUpdateMetadata,
+    clearProcessedRatings,
     EMOJI_RATINGS,
 };

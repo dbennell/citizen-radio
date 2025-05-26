@@ -90,7 +90,7 @@
   "metadataIntegration": {
     "enabled": true,
     "updateThreshold": 5,
-    "maxFeedbackPerTrack": 128,
+    "maxFeedbackPerTrack": 25,
     "sentimentAnalysis": true,
     "fallbackToFile": true
   },

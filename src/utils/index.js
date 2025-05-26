@@ -317,7 +317,7 @@ function killAllTrackedProcesses() {
  * Only returns messages that contain rating emojis to keep the chat clean
  * @param {string} videoId - The YouTube video ID
  * @param {number} maxComments - Maximum number of comments to fetch
- * @returns {Promise<string[]>} - Array of comment text strings
+ * @returns {Promise<Object[]>} - Array of comment objects with text and author
  */
 async function fetchLastChatComments(videoId, maxComments = 10) {
     if (!videoId) {
@@ -330,32 +330,43 @@ async function fetchLastChatComments(videoId, maxComments = 10) {
 
         // Import the emoji ratings from ratingsManager
         const ratingManager = require('../managers/ratingsManager');
-        const EMOJI_RATINGS = {
-            // 1-star emojis (strong negative)
-            '🔇': 1, '😡': 1, '🤬': 1, '🤡': 1,
-            // 2-star emoji (dislike)
-            '👎': 2,
-            // 3-star emoji (neutral)
-            '🫳': 3,
-            // 4-star emoji (like)
-            '👍': 4,
-            // 5-star emojis (strong positive)
-            '❤️': 5, '😍': 5, '🥰': 5, '🤩': 5
-        };
+        const { EMOJI_RATINGS } = ratingManager;
 
-        // Extract text from messages, filter for those containing rating emojis, and limit to maxComments
+        // Filter messages containing rating emojis, extract text and author, and limit to maxComments
         return messages
-            .map(msg => msg.snippet.displayMessage || 
-                       msg.snippet.textMessageDetails?.messageText || '')
-            .filter(text => {
+            .filter(msg => {
+                const text = msg.snippet.displayMessage || 
+                           msg.snippet.textMessageDetails?.messageText || '';
+
                 // Only keep messages that contain at least one rating emoji
                 if (text.trim() === '') return false;
                 for (const char of text) {
-                    if (EMOJI_RATINGS[char]) {
+                    // Need to handle different Unicode representations of emojis
+                    // But be more precise to avoid false positives with invisible characters
+                    const matchingEmoji = Object.keys(EMOJI_RATINGS).find(emoji => 
+                        emoji === char || 
+                        (emoji.includes(char) && char.trim() !== '') || 
+                        (char.includes(emoji) && emoji.trim() !== '')
+                    );
+                    if (matchingEmoji) {
                         return true;
                     }
                 }
                 return false;
+            })
+            .map(msg => {
+                let text = msg.snippet.displayMessage || 
+                          msg.snippet.textMessageDetails?.messageText || '';
+
+                // Remove all instances of the mute emoji (🔇) from the text
+                // Using a more comprehensive approach to catch variations and invisible characters
+                const muteEmojiPattern = new RegExp('\\s*[\\u{1F507}]\\s*', 'gu'); // Unicode for 🔇 with optional whitespace
+                text = text.replace(muteEmojiPattern, '').trim();
+
+                return {
+                    text: text,
+                    author: msg.authorDetails?.displayName || 'Anonymous'
+                };
             })
             .slice(0, maxComments);
     } catch (error) {
