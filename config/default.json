@@ -59,6 +59,14 @@
     "updateMetadata": true,
     "createAutomatically": false
   },
+  "video": {
+    "resolution": {
+      "width": 1920,
+      "height": 1080
+    },
+    "resizeMode": "height", 
+    "enablePadding": true
+  },
   "ratingSystem": {
     "enabled": true,
     "defaultRating": 3,
@@ -67,7 +75,7 @@
     "ratingPersistence": true,
     "displayOnStream": true,
     "streamDelay": 0,
-    "commentCheckInterval": 6
+    "postTrackWindow": 30
   },
   "contentQueue": {
     "minQueueSize": 2,
@@ -90,7 +98,7 @@
   "metadataIntegration": {
     "enabled": true,
     "updateThreshold": 5,
-    "maxFeedbackPerTrack": 25,
+    "maxFeedbackPerTrack": 100,
     "sentimentAnalysis": true,
     "fallbackToFile": true
   },

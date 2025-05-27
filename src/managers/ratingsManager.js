@@ -1,10 +1,9 @@
 
 const fs = require('fs');
 const path = require('path');
-const { readLiveChat} = require('../utils');
+const { readLiveChat, resetChatPagination } = require('../utils');
 const { STATION_CONFIG } = require('../core/config'); // Fix the import to use destructuring
 //const { getPersistentVideoId } = require('./orchestrator');
-const feedbackManager = require('./feedbackManager');
 const engagementMonitor = require('./engagementMonitor');
 const sentimentAnalyzer = require('../utils/sentimentAnalyzer');
 const NodeID3 = require('node-id3');
@@ -16,6 +15,44 @@ let processedMessageIds = new Set();
 
 // Path to store processed message IDs between restarts
 const processedIdsPath = path.join(__dirname, '../../data/processed_message_ids.json');
+
+// Path to the chat log file
+const chatLogPath = path.join(__dirname, '../../data/chat.log');
+
+// Path to the feedback log file
+const feedbackLogPath = path.join(__dirname, '../../data/feedback.log');
+
+// Path to the ratings log file
+const ratingPath = path.join(__dirname, '../../data/ratings.log');
+
+// Initialize log files if they don't exist
+function initLogFiles() {
+    const dataDir = path.join(__dirname, '../../data');
+    if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    // Initialize chat.log
+    if (!fs.existsSync(chatLogPath)) {
+        fs.writeFileSync(chatLogPath, JSON.stringify([], null, 2));
+        console.log('Chat log initialized');
+    }
+
+    // Initialize feedback.log
+    if (!fs.existsSync(feedbackLogPath)) {
+        fs.writeFileSync(feedbackLogPath, JSON.stringify([], null, 2));
+        console.log('Feedback log initialized');
+    }
+
+    // Initialize ratings.log
+    if (!fs.existsSync(ratingPath)) {
+        fs.writeFileSync(ratingPath, JSON.stringify({}, null, 2));
+        console.log('Ratings file initialized');
+    }
+}
+
+// Initialize log files on module load
+initLogFiles();
 
 // Load processed message IDs from disk if available
 try {
@@ -39,7 +76,14 @@ function saveProcessedMessageIds() {
             processedMessageIds = new Set(idsArray);
         }
 
-        fs.writeFileSync(processedIdsPath, JSON.stringify(idsArray, null, 2));
+        // Write to a temporary file first to avoid corruption if the process crashes
+        const tempPath = `${processedIdsPath}.tmp`;
+        fs.writeFileSync(tempPath, JSON.stringify(idsArray, null, 2));
+
+        // Rename the temporary file to the actual file
+        fs.renameSync(tempPath, processedIdsPath);
+
+        console.log(`[Debug] Saved ${idsArray.length} processed message IDs`);
         return true;
     } catch (error) {
         console.error('Error saving processed message IDs:', error);
@@ -61,12 +105,6 @@ function clearProcessedMessageIds() {
         console.error('Error clearing processed message IDs:', error);
         return false;
     }
-}
-
-// right after your imports, before any functions:
-const ratingPath = path.join(__dirname, '../../data/ratings.json');
-if (!fs.existsSync(ratingPath)) {
-    fs.writeFileSync(ratingPath, JSON.stringify({}, null, 2));
 }
 
 /**
@@ -93,6 +131,10 @@ function closeCommentWindow() {
     // We don't need to keep track of processed messages from previous tracks
     clearProcessedMessageIds();
 
+    // Reset chat pagination to fetch from the beginning next time
+    // This prevents duplicate messages between tracks
+    resetChatPagination();
+
     return commentWindow.end.toISOString();
 }
 
@@ -107,27 +149,13 @@ const EMOJI_RATINGS = {
     // 4-star emoji (like)
     '👍': 4,
     // 5-star emojis (strong positive)
-    '❤️': 5, '😍': 5, '🥰': 5, '🤩': 5
+    '❤️': 5, '❤': 5, '♥️': 5, '♥': 5, '😍': 5, '🥰': 5, '🤩': 5
 };
 
 // Cache for current play information
 let currentlyPlaying = null;
 
-/**
- * Set the currently playing track to associate comments with it
- * @param {Object} trackInfo - Information about currently playing track
- */
-function setCurrentlyPlaying(trackInfo) {
-    currentlyPlaying = {
-        ...trackInfo,
-        rel: trackInfo.trackRel || trackInfo.rel, // Support both trackRel (from orchestrator) and rel
-        startTime: new Date()
-    };
-
-    // Add debug logging to help diagnose issues
-    //console.log(`[Rating Debug] Now playing: ${currentlyPlaying.title} by ${currentlyPlaying.artist || 'Unknown'}`);
-    //console.log(`[Rating Debug] Track path: ${currentlyPlaying.rel}`);
-}
+// setCurrentlyPlaying function is defined below
 
 /**
  * Load ratings from disk
@@ -135,7 +163,6 @@ function setCurrentlyPlaying(trackInfo) {
  * @returns {Object} - The ratings data
  */
 function loadRatings() {
-    const ratingPath = path.join(__dirname, '../../data/ratings.json');
     try {
         if (fs.existsSync(ratingPath)) {
             return JSON.parse(fs.readFileSync(ratingPath, 'utf8'));
@@ -154,7 +181,6 @@ function loadRatings() {
  * @returns {boolean} - Success status
  */
 function saveRatings(ratings) {
-    const ratingPath = path.join(__dirname, '../../data/ratings.json');
     try {
         fs.writeFileSync(ratingPath, JSON.stringify(ratings, null, 2));
         return true;
@@ -173,10 +199,22 @@ function parseRatingFromComment(comment) {
 
     if (!comment?.snippet?.publishedAt) return null;
     // get the raw text
-    const text =
+    let text =
     comment.snippet.displayMessage ||
     comment.snippet.textMessageDetails?.messageText ||
     '';
+
+    // Log the raw text for debugging
+    console.log(`Raw rating text: "${text}" (Length: ${text.length})`);
+
+    // Remove invisible characters (zero-width spaces, etc.)
+    const originalText = text;
+    text = text.replace(/[\u200B-\u200F\uFEFF\u0000-\u001F]/g, '');
+
+    // Log the cleaned text for debugging
+    if (text !== originalText) {
+        console.log(`Cleaned rating text: "${text}" (Length: ${text.length})`);
+    }
 
     const publishedAt = comment.snippet.publishedAt;
     const authorName = comment.authorDetails?.displayName || 'Unknown';
@@ -185,19 +223,18 @@ function parseRatingFromComment(comment) {
     for (const char of text) {
         // Need to handle different Unicode representations of emojis
         // But be more precise to avoid false positives with invisible characters
-        const matchingEmoji = Object.keys(EMOJI_RATINGS).find(emoji => 
-            emoji === char || 
-            (emoji.includes(char) && char.trim() !== '') || 
-            (char.includes(emoji) && emoji.trim() !== '')
-        );
 
-        if (matchingEmoji) {
+        // First, check for exact match which is the most reliable
+        if (EMOJI_RATINGS[char] !== undefined) {
             const ratingData = {
-                value: EMOJI_RATINGS[matchingEmoji],
+                value: EMOJI_RATINGS[char],
                 timestamp: publishedAt,
                 author: authorName,
                 comment: text
             };
+
+            // Log the detected emoji for debugging
+            console.log(`Detected emoji: "${char}" (Unicode: ${[...char].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')})`);
 
             // Process for noteworthy comments if enhanced engagement is enabled
             if (STATION_CONFIG.enhancedEngagement?.enabled) {
@@ -231,32 +268,88 @@ function processCommentForEngagement(ratingData) {
     engagementMonitor.processComment(commentData);
 }
 
+// Track the previously played track
+let previouslyPlayed = null;
+let previousTrackEndTime = null;
+
 /**
- * Match rating to currently playing track
+ * Match rating to currently playing track or previously played track
  * @param {Object} rating - Rating information
  * @returns {Object|null} - Track with rating or null if no match
  */
 function matchRatingToTrack(rating) {
-    if (!currentlyPlaying) {
-        return null;
-    }
-
     // Convert comment timestamp to Date
     const commentTime = new Date(rating.timestamp);
 
-    // Check if comment was made while track was playing
-    // Allow for stream delay (default 60 seconds)
+    // Get stream delay and post-track feedback window from config
     const streamDelay = STATION_CONFIG.ratingSystem?.streamDelay || 60;
-    const adjustedStartTime = new Date(currentlyPlaying.startTime.getTime() - (streamDelay * 1000));
+    const postTrackWindow = STATION_CONFIG.ratingSystem?.postTrackWindow || 30; // seconds to consider feedback for previous track
 
-    if (commentTime >= adjustedStartTime) {
-        return {
-            track: currentlyPlaying.rel,
-            rating
-        };
+    // Check if we have a currently playing track
+    if (currentlyPlaying) {
+        // Check if the track is a segway
+        const isSegway = currentlyPlaying.rel && currentlyPlaying.rel.toLowerCase().includes('segway');
+
+        // If it's a segway and we have a previously played track, associate feedback with the previous track
+        if (isSegway && previouslyPlayed) {
+            console.log(`[Rating Debug] Current track is a segway, associating feedback with previous track: ${previouslyPlayed.rel}`);
+            return {
+                track: previouslyPlayed.rel,
+                rating
+            };
+        }
+
+        // Check if comment was made while track was playing
+        const adjustedStartTime = new Date(currentlyPlaying.startTime.getTime() - (streamDelay * 1000));
+
+        if (commentTime >= adjustedStartTime) {
+            return {
+                track: currentlyPlaying.rel,
+                rating
+            };
+        }
+    }
+
+    // If we have a previously played track and the comment is within the post-track window
+    if (previouslyPlayed && previousTrackEndTime) {
+        const postTrackWindowEnd = new Date(previousTrackEndTime.getTime() + (postTrackWindow * 1000));
+
+        if (commentTime >= previousTrackEndTime && commentTime <= postTrackWindowEnd) {
+            console.log(`[Rating Debug] Comment received within post-track window, associating with previous track: ${previouslyPlayed.rel}`);
+            return {
+                track: previouslyPlayed.rel,
+                rating
+            };
+        }
     }
 
     return null;
+}
+
+/**
+ * Set the currently playing track to associate comments with it
+ * @param {Object} trackInfo - Information about currently playing track
+ */
+function setCurrentlyPlaying(trackInfo) {
+    // Store the previous track before updating
+    if (currentlyPlaying) {
+        previouslyPlayed = { ...currentlyPlaying };
+        previousTrackEndTime = new Date();
+    }
+
+    currentlyPlaying = {
+        ...trackInfo,
+        rel: trackInfo.trackRel || trackInfo.rel, // Support both trackRel (from orchestrator) and rel
+        startTime: new Date()
+    };
+
+    // Reset chat pagination to fetch from the beginning for the new track
+    // This prevents duplicate messages between tracks
+    resetChatPagination();
+
+    // Add debug logging to help diagnose issues
+    //console.log(`[Rating Debug] Now playing: ${currentlyPlaying.title} by ${currentlyPlaying.artist || 'Unknown'}`);
+    //console.log(`[Rating Debug] Track path: ${currentlyPlaying.rel}`);
 }
 
 /**
@@ -275,6 +368,18 @@ function updateTrackRating(trackPath, ratingData) {
             ratings: [ratingData]
         };
     } else {
+        // Check for duplicates before adding
+        const isDuplicate = ratings[trackPath].ratings.some(r => 
+            r.timestamp === ratingData.timestamp && 
+            r.author === ratingData.author && 
+            r.comment === ratingData.comment
+        );
+
+        if (isDuplicate) {
+            console.log(`[Rating Debug] Skipping duplicate rating for "${trackPath}" from ${ratingData.author}`);
+            return; // Skip this rating
+        }
+
         // Add new rating
         ratings[trackPath].ratings.push(ratingData);
 
@@ -294,27 +399,33 @@ function updateTrackRating(trackPath, ratingData) {
     const updateThreshold = STATION_CONFIG.metadataIntegration?.updateThreshold || 5;
     const maxFeedback = STATION_CONFIG.metadataIntegration?.maxFeedbackPerTrack || 25;
 
-    if (STATION_CONFIG.metadataIntegration?.enabled && 
-        (ratings[trackPath].ratingCount >= updateThreshold || ratings[trackPath].ratingCount >= maxFeedback)) {
+    // Count feedback entries for this track in the feedback log
+    const feedbackLog = readFeedbackLog();
+    const trackFeedbackCount = feedbackLog.filter(entry => entry.trackPath === trackPath).length;
 
-        if (ratings[trackPath].ratingCount >= maxFeedback) {
-            console.log(`[Rating Debug] Reached maxFeedbackPerTrack (${maxFeedback}) for "${trackPath}". Processing ratings...`);
+    if (STATION_CONFIG.metadataIntegration?.enabled && 
+        (trackFeedbackCount >= updateThreshold || trackFeedbackCount >= maxFeedback)) {
+
+        if (trackFeedbackCount >= maxFeedback) {
+            console.log(`[Rating Debug] Reached maxFeedbackPerTrack (${maxFeedback}) for "${trackPath}". Processing feedback...`);
         } else {
-            console.log(`[Rating Debug] Reached updateThreshold (${updateThreshold}) for "${trackPath}". Processing ratings...`);
+            console.log(`[Rating Debug] Reached updateThreshold (${updateThreshold}) for "${trackPath}". Processing feedback...`);
         }
 
-        // Process ratings and update MP3 metadata
-        processRatingsAndUpdateMetadata(trackPath, ratings[trackPath]);
+        // Remove entries from feedback log and get them for processing
+        const feedbackEntries = removeFromFeedbackLog(trackPath);
 
-        // Clear ratings from ratings.json after processing
+        if (feedbackEntries.length > 0) {
+            // Process feedback and update MP3 metadata
+            processFeedbackAndUpdateMetadata(trackPath, feedbackEntries);
+        }
+
+        // Clear ratings from ratings.log after processing
         clearProcessedRatings(trackPath);
     } else if (STATION_CONFIG.metadataIntegration?.enabled) {
         // If we haven't reached the threshold, still log the feedback for debugging
-        console.log(`[Feedback Debug] Adding feedback for "${trackPath}" with rating ${ratingData.value}★ (${ratings[trackPath].ratingCount}/${updateThreshold})`);
+        console.log(`[Feedback Debug] Adding feedback for "${trackPath}" with rating ${ratingData.value}★ (${trackFeedbackCount}/${updateThreshold})`);
     }
-
-    // Note: We no longer use the feedbackManager to store per-track feedback files
-    // All ratings are now stored in ratings.json and processed in batches when reaching maxFeedbackPerTrack
 }
 
 /**
@@ -331,6 +442,147 @@ function getTicketsForTrack(rating) {
     const min = STATION_CONFIG.ratingSystem?.minTickets || 1;
     const max = STATION_CONFIG.ratingSystem?.maxTickets || 5;
     return Math.max(min, Math.min(max, Math.round(rating)));
+}
+
+/**
+ * Read messages from the chat log
+ * @returns {Array} - Array of chat messages
+ */
+function readChatLog() {
+    try {
+        if (fs.existsSync(chatLogPath)) {
+            return JSON.parse(fs.readFileSync(chatLogPath, 'utf8'));
+        }
+        return [];
+    } catch (error) {
+        console.error('Error reading chat log:', error);
+        return [];
+    }
+}
+
+/**
+ * Append messages to the chat log
+ * @param {Array} messages - Array of chat messages to append
+ * @returns {boolean} - Success status
+ */
+function appendToChatLog(messages) {
+    try {
+        // Read existing log
+        const chatLog = readChatLog();
+
+        // Get existing message IDs for deduplication
+        const existingIds = new Set(chatLog.map(msg => msg.id));
+
+        // Filter out messages that are already in the log
+        const newMessages = messages.filter(msg => !existingIds.has(msg.id));
+
+        if (newMessages.length === 0) {
+            return true; // No new messages to add
+        }
+
+        // Append new messages
+        const updatedLog = [...chatLog, ...newMessages];
+
+        // Limit the size of the log to prevent it from growing too large
+        // Keep only the most recent 1000 messages
+        const prunedLog = updatedLog.length > 1000 ? updatedLog.slice(updatedLog.length - 1000) : updatedLog;
+
+        // Write updated log
+        fs.writeFileSync(chatLogPath, JSON.stringify(prunedLog, null, 2));
+
+        console.log(`[Chat Log] Added ${newMessages.length} new messages to chat log`);
+        return true;
+    } catch (error) {
+        console.error('Error appending to chat log:', error);
+        return false;
+    }
+}
+
+/**
+ * Read entries from the feedback log
+ * @returns {Array} - Array of feedback entries
+ */
+function readFeedbackLog() {
+    try {
+        if (fs.existsSync(feedbackLogPath)) {
+            return JSON.parse(fs.readFileSync(feedbackLogPath, 'utf8'));
+        }
+        return [];
+    } catch (error) {
+        console.error('Error reading feedback log:', error);
+        return [];
+    }
+}
+
+/**
+ * Append a feedback entry to the feedback log
+ * @param {Object} feedback - Feedback entry to append
+ * @returns {boolean} - Success status
+ */
+function appendToFeedbackLog(feedback) {
+    try {
+        // Read existing log
+        const feedbackLog = readFeedbackLog();
+
+        // Check for duplicates before appending
+        const isDuplicate = feedbackLog.some(entry => 
+            entry.trackPath === feedback.trackPath && 
+            entry.author === feedback.author && 
+            entry.comment === feedback.comment && 
+            entry.timestamp === feedback.timestamp
+        );
+
+        if (isDuplicate) {
+            console.log(`[Feedback Debug] Skipping duplicate feedback for "${feedback.trackPath}" from ${feedback.author}`);
+            return true; // Return true since we successfully handled the feedback (by skipping it)
+        }
+
+        // Append new feedback
+        feedbackLog.push(feedback);
+
+        // Write updated log
+        fs.writeFileSync(feedbackLogPath, JSON.stringify(feedbackLog, null, 2));
+
+        console.log(`[Feedback Log] Added new feedback for "${feedback.trackPath}"`);
+        return true;
+    } catch (error) {
+        console.error('Error appending to feedback log:', error);
+        return false;
+    }
+}
+
+/**
+ * Remove entries from the feedback log for a specific track
+ * @param {string} trackPath - Path to the track
+ * @param {number} count - Number of entries to remove (default: all)
+ * @returns {Array} - Removed entries
+ */
+function removeFromFeedbackLog(trackPath, count = Infinity) {
+    try {
+        // Read existing log
+        const feedbackLog = readFeedbackLog();
+
+        // Find entries for the specified track
+        const trackEntries = feedbackLog.filter(entry => entry.trackPath === trackPath);
+        const otherEntries = feedbackLog.filter(entry => entry.trackPath !== trackPath);
+
+        // Determine how many entries to remove
+        const removeCount = Math.min(count, trackEntries.length);
+        const entriesToRemove = trackEntries.slice(0, removeCount);
+        const remainingTrackEntries = trackEntries.slice(removeCount);
+
+        // Update the log
+        const updatedLog = [...otherEntries, ...remainingTrackEntries];
+
+        // Write updated log
+        fs.writeFileSync(feedbackLogPath, JSON.stringify(updatedLog, null, 2));
+
+        console.log(`[Feedback Log] Removed ${removeCount} entries for "${trackPath}"`);
+        return entriesToRemove;
+    } catch (error) {
+        console.error('Error removing from feedback log:', error);
+        return [];
+    }
 }
 
 /**
@@ -353,14 +605,8 @@ async function pollForComments(videoId) {
     const messages = await readLiveChat(videoId);
     //console.log(`[Rating Debug] Fetched ${messages.length} chat messages`);
 
-    // 2) Dump them all with their timestamps
-    messages.forEach((msg, idx) => {
-        const text = msg.snippet.displayMessage
-            || msg.snippet.textMessageDetails?.messageText
-            || '(no text)';
-        const ts   = msg.snippet.publishedAt || '(no ts)';
-        //console.log(`[Rating Debug] #${idx} → text="${text}" @ ${ts}`);
-    });
+    // 2) Append messages to chat log
+    appendToChatLog(messages);
 
     // 3) Process only those inside our window
     let processed = 0;
@@ -415,8 +661,18 @@ async function pollForComments(videoId) {
             continue;
         }
 
-        // 6) Update the ratings in the feedback.json file
+        // 6) Add to feedback log
         const key = match.track;
+        const feedbackEntry = {
+            trackPath: key,
+            rating: rating.value,
+            author: rating.author,
+            comment: text,
+            timestamp: rating.timestamp
+        };
+        appendToFeedbackLog(feedbackEntry);
+
+        // 7) Update the ratings in the ratings.log file
         updateTrackRating(key, rating);
 
         // Reload ratings to get the updated values for logging
@@ -433,7 +689,7 @@ async function pollForComments(videoId) {
         processed++;
     }
 
-    // 7) Save processed message IDs if we processed any new messages
+    // 8) Save processed message IDs if we processed any new messages
     if (newMessagesProcessed) {
         saveProcessedMessageIds();
     }
@@ -441,13 +697,62 @@ async function pollForComments(videoId) {
     // Only clear the window if we're at the end of the track
     // (when closeCommentWindow has been called)
     if (commentWindow.end instanceof Date) {
-        // 8) Clear window
+        // 9) Clear window
         commentWindow.start = commentWindow.end = null;
     }
 
     return processed;
 }
 
+
+/**
+ * Read rating data from MP3 metadata
+ * @param {string} trackPath - Path to the track
+ * @returns {Object|null} - Rating data or null if not available
+ */
+function readRatingFromMetadata(trackPath) {
+    try {
+        // Check if file exists and is an MP3
+        const fullPath = path.resolve(trackPath);
+        if (!fs.existsSync(fullPath) || !fullPath.toLowerCase().endsWith('.mp3')) {
+            return null;
+        }
+
+        // Read tags
+        const tags = NodeID3.read(fullPath);
+        if (!tags || !tags.userDefinedText) {
+            return null;
+        }
+
+        // Helper function to get a custom frame value
+        const getCustomFrame = (description) => {
+            const frame = tags.userDefinedText.find(
+                frame => frame.description === description
+            );
+            return frame ? frame.text : null;
+        };
+
+        // Get rating information
+        const rating = getCustomFrame('RATING');
+        const count = getCustomFrame('RATING_COUNT');
+        const sentiment = getCustomFrame('SENTIMENT');
+        const lastUpdated = getCustomFrame('LAST_UPDATED');
+
+        if (!rating || !count) {
+            return null;
+        }
+
+        return {
+            rating: parseFloat(rating),
+            count: parseInt(count, 10),
+            sentiment: sentiment || '',
+            lastUpdated: lastUpdated || new Date().toISOString()
+        };
+    } catch (error) {
+        console.error(`Error reading metadata for ${trackPath}:`, error);
+        return null;
+    }
+}
 
 /**
  * Get rating for a specific track
@@ -458,13 +763,13 @@ function getRatingForTrack(trackPath) {
     // If metadata integration is enabled, always try to get rating from MP3 metadata first
     if (STATION_CONFIG.metadataIntegration?.enabled) {
         // Try to get rating directly from MP3 metadata
-        const metadataRating = feedbackManager.readRatingFromMetadata(trackPath);
+        const metadataRating = readRatingFromMetadata(trackPath);
 
         if (metadataRating) {
             return metadataRating.rating;
         }
 
-        // If fallbackToFile is enabled and metadata is not available, try ratings.json
+        // If fallbackToFile is enabled and metadata is not available, try ratings.log
         if (STATION_CONFIG.metadataIntegration?.fallbackToFile) {
             const ratings = loadRatings();
             const inMemoryRating = ratings[trackPath]?.averageRating;
@@ -477,19 +782,24 @@ function getRatingForTrack(trackPath) {
         return null;
     }
 
-    // If metadata integration is disabled, use ratings.json
+    // If metadata integration is disabled, use ratings.log
     const ratings = loadRatings();
     return ratings[trackPath]?.averageRating || null;
 }
 
 /**
- * Process ratings and update MP3 metadata
+ * Process feedback entries and update MP3 metadata
  * @param {string} trackPath - Path to the track
- * @param {Object} ratingsData - Ratings data for the track
+ * @param {Array} feedbackEntries - Feedback entries for the track
  * @returns {boolean} - Success status
  */
-function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
+function processFeedbackAndUpdateMetadata(trackPath, feedbackEntries) {
     try {
+        if (!feedbackEntries || feedbackEntries.length === 0) {
+            console.warn(`[Rating Debug] No feedback entries to process for "${trackPath}"`);
+            return false;
+        }
+
         // Check if file exists and is an MP3
         const fullPath = path.resolve(trackPath);
         if (!fs.existsSync(fullPath) || !fullPath.toLowerCase().endsWith('.mp3')) {
@@ -512,6 +822,12 @@ function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
         // Get existing rating information
         const existingRating = getCustomFrame('RATING') ? parseFloat(getCustomFrame('RATING')) : null;
         const existingCount = getCustomFrame('RATING_COUNT') ? parseInt(getCustomFrame('RATING_COUNT'), 10) : 0;
+        const existingSentiment = getCustomFrame('SENTIMENT') || '';
+
+        // Calculate average rating from feedback entries
+        const sum = feedbackEntries.reduce((acc, entry) => acc + entry.rating, 0);
+        const newRatingFromFeedback = sum / feedbackEntries.length;
+        const newCountFromFeedback = feedbackEntries.length;
 
         // Calculate new rating by merging with existing
         let newRating, newCount;
@@ -519,20 +835,34 @@ function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
         if (existingRating && existingCount > 0) {
             // If we have existing ratings, calculate weighted average
             const existingTotal = existingRating * existingCount;
-            const newTotal = ratingsData.averageRating * ratingsData.ratingCount;
-            newCount = existingCount + ratingsData.ratingCount;
+            const newTotal = newRatingFromFeedback * newCountFromFeedback;
+            newCount = existingCount + newCountFromFeedback;
             newRating = (existingTotal + newTotal) / newCount;
-            console.log(`[Rating Debug] Merging ratings: existing=${existingRating.toFixed(1)} (${existingCount}), new=${ratingsData.averageRating.toFixed(1)} (${ratingsData.ratingCount}), result=${newRating.toFixed(1)} (${newCount})`);
+            console.log(`[Rating Debug] Merging ratings: existing=${existingRating.toFixed(1)} (${existingCount}), new=${newRatingFromFeedback.toFixed(1)} (${newCountFromFeedback}), result=${newRating.toFixed(1)} (${newCount})`);
         } else {
             // If no existing ratings, use the new ones
-            newRating = ratingsData.averageRating;
-            newCount = ratingsData.ratingCount;
+            newRating = newRatingFromFeedback;
+            newCount = newCountFromFeedback;
             console.log(`[Rating Debug] No existing ratings, using new: ${newRating.toFixed(1)} (${newCount})`);
         }
 
+        // Prepare feedback comments for sentiment analysis
+        const feedbackComments = feedbackEntries.map(entry => ({
+            author: entry.author,
+            comment: entry.comment,
+            rating: entry.rating,
+            timestamp: entry.timestamp
+        }));
+
         // Perform sentiment analysis on the comments
-        const sentimentResult = sentimentAnalyzer.analyzeSentiment(ratingsData.ratings);
-        const sentimentSummary = sentimentResult.summary;
+        const sentimentResult = sentimentAnalyzer.analyzeSentiment(feedbackComments);
+
+        // If there's an existing sentiment, include it in the analysis
+        let sentimentSummary = sentimentResult.summary;
+        if (existingSentiment && existingSentiment.trim() !== '') {
+            // Combine the existing sentiment with the new one
+            sentimentSummary = `${sentimentSummary}, building on previous feedback that was ${existingSentiment.toLowerCase()}`;
+        }
 
         // Update custom frames with rating data
         tags.userDefinedText = tags.userDefinedText || [];
@@ -577,7 +907,32 @@ function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
 }
 
 /**
- * Clear processed ratings from ratings.json
+ * Process ratings and update MP3 metadata (legacy method, kept for compatibility)
+ * @param {string} trackPath - Path to the track
+ * @param {Object} ratingsData - Ratings data for the track
+ * @returns {boolean} - Success status
+ */
+function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
+    try {
+        // Convert ratings data to feedback entries format
+        const feedbackEntries = ratingsData.ratings.map(rating => ({
+            trackPath: trackPath,
+            rating: rating.value,
+            author: rating.author,
+            comment: rating.comment,
+            timestamp: rating.timestamp
+        }));
+
+        // Use the new method to process feedback and update metadata
+        return processFeedbackAndUpdateMetadata(trackPath, feedbackEntries);
+    } catch (error) {
+        console.error(`[Rating Debug] Error processing ratings for "${trackPath}":`, error);
+        return false;
+    }
+}
+
+/**
+ * Clear processed ratings from ratings.log
  * @param {string} trackPath - Path to the track
  * @returns {boolean} - Success status
  */
@@ -613,6 +968,14 @@ function clearProcessedRatings(trackPath) {
     }
 }
 
+/**
+ * Get the currently playing track information
+ * @returns {Object|null} - Information about the currently playing track or null if no track is playing
+ */
+function getCurrentlyPlaying() {
+    return currentlyPlaying;
+}
+
 module.exports = {
     loadRatings,
     saveRatings,
@@ -622,12 +985,20 @@ module.exports = {
     getRatingForTrack,
     getTicketsForTrack,
     setCurrentlyPlaying,
+    getCurrentlyPlaying,
     openCommentWindow,
     closeCommentWindow,
     pollForComments,
     saveProcessedMessageIds,
     clearProcessedMessageIds,
     processRatingsAndUpdateMetadata,
+    processFeedbackAndUpdateMetadata,
     clearProcessedRatings,
+    readRatingFromMetadata,
+    readChatLog,
+    appendToChatLog,
+    readFeedbackLog,
+    appendToFeedbackLog,
+    removeFromFeedbackLog,
     EMOJI_RATINGS,
 };

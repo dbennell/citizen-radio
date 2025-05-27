@@ -10,71 +10,148 @@ const { createCanvas, loadImage } = require('canvas');
 const { STATION_CONFIG } = require('../core/config');
 const { getRandomCoverImage } = require('../core/streamer');
 const { extractMetadata, fetchLastChatComments } = require('../utils');
-
-// Cache for emoji images
-const emojiImageCache = {};
+const emojiMap             = require('../utils/emojiMap');
+const emojiImageCache      = {};
+const {EMOJI_RATINGS} = require('./ratingsManager');
+const EMOJI_DIR = path.join(__dirname, '../../assets/emojis');
 
 // Cache for track-specific comments
 let currentTrackComments = [];
 
-// Emoji ratings mapping - imported from ratingsManager
-const EMOJI_RATINGS = {
-    // 1-star emojis (strong negative)
-    '🔇': 1, '😡': 1, '🤬': 1, '🤡': 1,
-    // 2-star emoji (dislike)
-    '👎': 2,
-    // 3-star emoji (neutral)
-    '🫳': 3,
-    // 4-star emoji (like)
-    '👍': 4,
-    // 5-star emojis (strong positive)
-    '❤️': 5, '😍': 5, '🥰': 5, '🤩': 5
-};
 
 /**
- * Load an emoji image from the assets directory
- * @param {string} emoji - The emoji character
- * @returns {Promise<Image>} - The loaded image
+ * Given an emoji character, return a loaded Image (or null).
  */
-async function loadEmojiImage(emoji) {
-    // If we already have this emoji in cache, return it
-    if (emojiImageCache[emoji]) {
-        return emojiImageCache[emoji];
-    }
+async function loadEmojiImage(emojiChar) {
+    // fast cache‐hit
+    if (emojiImageCache[emojiChar]) return emojiImageCache[emojiChar];
 
-    // Map emoji to filename (you'll need to create these image files)
-    const emojiFilenames = {
-        '🔇': 'mute.png',
-        '😡': 'angry.png',
-        '🤬': 'face_with_symbols_on_mouth.png',
-        '🤡': 'clown_face.png',
-        '👎': 'thumbs_down.png',
-        '🫳': 'hand_palm_down.png',
-        '👍': 'thumbs_up.png',
-        '❤️': 'heart.png',
-        '😍': 'heart_eyes.png',
-        '🥰': 'heart_eyes.png',
-        '🤩': 'star_struck.png'
-    };
+    console.log(`Debug: Looking up emoji character: "${emojiChar}" (Unicode: ${[...emojiChar].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')})`);
 
-    const filename = emojiFilenames[emoji];
-    if (!filename) {
-        return null; // No image for this emoji
-    }
+    // Check for exact match first
+    let fullPath = emojiMap[emojiChar];
 
-    try {
-        // Assuming emoji images are stored in an 'assets/emojis' directory
-        const imagePath = path.join(__dirname, '../../assets/emojis', filename);
-        if (!fs.existsSync(imagePath)) {
-            console.warn(`Emoji image not found: ${imagePath}`);
-            return null;
+    // If no exact match, try to find a close match
+    if (!fullPath) {
+        console.log(`No exact match for emoji "${emojiChar}" in emojiMap (${Object.keys(emojiMap).length} keys)`);
+
+        // Try to find a close match by comparing code points
+        const emojiCodePoints = [...emojiChar].map(c => c.codePointAt(0));
+        let bestMatch = null;
+        let bestMatchScore = 0;
+
+        for (const key of Object.keys(emojiMap)) {
+            const keyCodePoints = [...key].map(c => c.codePointAt(0));
+            // Check if any code points match
+            const matchingPoints = emojiCodePoints.filter(cp => keyCodePoints.includes(cp)).length;
+            if (matchingPoints > bestMatchScore) {
+                bestMatchScore = matchingPoints;
+                bestMatch = key;
+            }
         }
 
-        const image = await loadImage(imagePath);
-        emojiImageCache[emoji] = image;
-        return image;
-    } catch (error) {
-        console.error(`Error loading emoji image for ${emoji}:`, error);
+        if (bestMatch && bestMatchScore > 0) {
+            console.log(`Found potential match: "${bestMatch}" with score ${bestMatchScore}`);
+            fullPath = emojiMap[bestMatch];
+
+            // Cache this mapping for future lookups
+            emojiMap[emojiChar] = fullPath;
+            console.log(`Added mapping for "${emojiChar}" -> "${bestMatch}" (${fullPath})`);
+        } else {
+            // As a last resort, try to find a file with a name that might match
+            // Look for common emoji names based on the character
+            const commonNames = {
+                '👍': ['thumbs_up', '+1'],
+                '👎': ['thumbs_down', '-1'],
+                '❤️': ['heart', 'red_heart'],
+                '❤': ['heart', 'red_heart'],
+                '♥️': ['heart', 'red_heart'],
+                '♥': ['heart', 'red_heart'],
+                '😍': ['heart_eyes'],
+                '🥰': ['smiling_hearts', 'smiling_face_with_hearts'],
+                '🤩': ['star_struck', 'star_eyes'],
+                '🔇': ['mute', 'muted_speaker'],
+                '😡': ['angry', 'pouting_face'],
+                '🤬': ['angry_cursing', 'face_with_symbols_on_mouth'],
+                '🤡': ['clown', 'clown_face'],
+                '🫳': ['hand_palm_down', 'palm_down_hand']
+            };
+
+            const possibleNames = commonNames[emojiChar] || [];
+            if (possibleNames.length > 0) {
+                console.log(`Trying common names for "${emojiChar}": ${possibleNames.join(', ')}`);
+
+                // Check if any of these names exist in the assets directory
+                for (const name of possibleNames) {
+                    const possiblePath = path.join(EMOJI_DIR, `${name}.png`);
+                    if (fs.existsSync(possiblePath)) {
+                        fullPath = possiblePath;
+                        console.log(`Found file for common name "${name}": ${fullPath}`);
+
+                        // Cache this mapping for future lookups
+                        emojiMap[emojiChar] = fullPath;
+                        break;
+                    }
+                }
+            }
+
+            if (!fullPath) {
+                console.warn(`No PNG asset found for emoji "${emojiChar}" after all attempts`);
+
+                // Fallback to a default emoji or a similar one that exists
+                const fallbackEmojis = {
+                    '🔇': '😶', // No mouth emoji as fallback for mute
+                    '👍': '+1.png',
+                    '👎': '-1.png'
+                };
+
+                const fallbackPath = fallbackEmojis[emojiChar];
+                if (fallbackPath) {
+                    if (fallbackPath.endsWith('.png')) {
+                        // Direct path to a PNG file
+                        fullPath = path.join(EMOJI_DIR, fallbackPath);
+                        console.log(`Using fallback PNG file for "${emojiChar}": ${fullPath}`);
+                    } else {
+                        // Another emoji character, recursively try to load it
+                        console.log(`Using fallback emoji character for "${emojiChar}": "${fallbackPath}"`);
+                        return await loadEmojiImage(fallbackPath);
+                    }
+                } else {
+                    // If no specific fallback, try to use a generic emoji
+                    const genericPath = path.join(EMOJI_DIR, 'slightly_smiling_face.png');
+                    if (fs.existsSync(genericPath)) {
+                        fullPath = genericPath;
+                        console.log(`Using generic emoji for "${emojiChar}": ${fullPath}`);
+                    } else {
+                        return null;
+                    }
+                }
+            }
+        }
+    }
+
+    console.log(`Using path for emoji "${emojiChar}": ${fullPath}`);
+
+    try {
+        const img = await loadImage(fullPath);
+        emojiImageCache[emojiChar] = img;
+        return img;
+    } catch (err) {
+        console.error(`Failed loading ${fullPath}:`, err);
+
+        // Try to use a generic emoji as a last resort
+        try {
+            const genericPath = path.join(EMOJI_DIR, 'slightly_smiling_face.png');
+            if (fs.existsSync(genericPath)) {
+                console.log(`Using generic emoji after load failure for "${emojiChar}": ${genericPath}`);
+                const img = await loadImage(genericPath);
+                emojiImageCache[emojiChar] = img;
+                return img;
+            }
+        } catch (fallbackErr) {
+            console.error(`Failed loading fallback emoji:`, fallbackErr);
+        }
+
         return null;
     }
 }
@@ -101,19 +178,16 @@ async function renderTextWithEmojiImages(ctx, text, x, y, fontSize) {
         // Check if this character is an emoji we know about
         // Need to handle different Unicode representations of emojis
         // But be more precise to avoid false positives with invisible characters
-        const isEmoji = Object.keys(EMOJI_RATINGS).some(emoji => 
-            emoji === char || 
-            (emoji.includes(char) && char.trim() !== '') || 
-            (char.includes(emoji) && emoji.trim() !== '')
-        );
+
+        // First, check for exact match which is the most reliable
+        const isEmoji = Object.keys(EMOJI_RATINGS).includes(char);
 
         if (isEmoji) {
-            // Find the matching emoji from our known list
-            const matchingEmoji = Object.keys(EMOJI_RATINGS).find(emoji => 
-                emoji === char || 
-                (emoji.includes(char) && char.trim() !== '') || 
-                (char.includes(emoji) && emoji.trim() !== '')
-            );
+            // Use the exact matching emoji
+            const matchingEmoji = char;
+
+            // Log the detected emoji for debugging
+            console.log(`Rendering emoji: "${char}" (Unicode: ${[...char].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')})`);
 
             // Try to load emoji image
             const emojiImage = await loadEmojiImage(matchingEmoji);
@@ -143,12 +217,8 @@ async function renderTextWithEmojiImages(ctx, text, x, y, fontSize) {
             let textChunk = char;
             let j = i + 1;
             while (j < text.length) {
-                // Check if this character is an emoji using the same flexible comparison
-                const isNextCharEmoji = Object.keys(EMOJI_RATINGS).some(emoji => 
-                    emoji === text[j] || 
-                    (emoji.includes(text[j]) && text[j].trim() !== '') || 
-                    (text[j].includes(emoji) && emoji.trim() !== '')
-                );
+                // Check if this character is an emoji using the same strict comparison as above
+                const isNextCharEmoji = Object.keys(EMOJI_RATINGS).includes(text[j]);
 
                 if (isNextCharEmoji) {
                     break;
@@ -219,17 +289,20 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
 
             comments = [...currentTrackComments];
 
-            // console.log(`🗨️ Fetched ${newComments.length} comments, cache now has ${comments.length} comments`);
-            // if (comments.length > 0) {
-            //     console.log(`🗨️ First comment: "${comments[0].text}"`);
-            // }
+            console.log(`🗨️ Fetched ${newComments.length} comments, cache now has ${comments.length} comments`);
+            if (comments.length > 0) {
+                console.log(`🗨️ First comment: "${comments[0].text}" by ${comments[0].author}`);
+            } else {
+                console.log(`🗨️ No comments to display in overlay`);
+            }
         } catch (err) {
             console.error('Error fetching comments for overlay:', err);
         }
     }
 
-    // Only show the comment box if enhanced engagement is enabled and we have comments
-    const showCommentBox = STATION_CONFIG.enhancedEngagement?.enabled && comments.length > 0;
+    // Always show the comment box if we have comments, regardless of enhanced engagement setting
+    // This ensures comments are displayed even if the enhancedEngagement feature is not explicitly enabled
+    const showCommentBox = comments.length > 0;
 
     // Canvas setup
     const W = 1280, H = 720;
@@ -255,47 +328,41 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
     ctx.font = 'bold 36px sans-serif';
     ctx.fillText(title, 40, H - bandH + 40);
 
-    // Rating on first line with track title but right-aligned
-    ctx.font = 'bold 28px sans-serif';
-    ctx.textAlign = 'right';
-
-    // Load and display a star image instead of text character
-    try {
-        // Check if the star image exists before trying to load it
-        const starImagePath = path.join(__dirname, '../../assets/emojis/star.png');
-        if (fs.existsSync(starImagePath)) {
-            const starImage = await loadImage(starImagePath);
-            const starSize = 36;
-            const ratingText = ` ${rating.toPrecision(1)}`;
-            const ratingWidth = ctx.measureText(ratingText).width;
-
-            // Draw star image
-            ctx.drawImage(
-                starImage,
-                W - 40 - ratingWidth - starSize,
-                H - bandH + 40 - starSize + 8, // Align with text baseline
-                starSize,
-                starSize
-            );
-
-            // Draw rating number
-            ctx.fillText(ratingText, W - 40, H - bandH + 40);
-        } else {
-            // Fallback to text if image doesn't exist
-            // Use a font that supports colored emojis
-            const originalFont = ctx.font;
-            ctx.font = `bold 36px "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
-            ctx.fillText(`⭐ ${rating.toPrecision(1)}`, W - 40, H - bandH + 40);
-            ctx.font = originalFont;
+    /**
+     * Display the rating with a star image dynamically.
+     * Aligns with text baseline and adjusts for compact and consistent rendering.
+     * @param {CanvasRenderingContext2D} ctx - The canvas drawing context.
+     * @param {number} rating - The numeric rating to display.
+     * @param {number} x - X coordinate for drawing the rating.
+     * @param {number} y - Y coordinate for drawing the rating.
+     */
+    async function renderRatingWithStar(ctx, rating, x, y) {
+        if (!rating || rating <= 0) {
+            return; // No rating to display
         }
-    } catch (error) {
-        // Fallback to text if image loading fails
-        console.error('Error loading star image:', error);
-        // Use a font that supports colored emojis
-        const originalFont = ctx.font;
-        ctx.font = `bold 36px "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
-        ctx.fillText(`⭐ ${rating.toPrecision(1)}`, W - 40, H - bandH + 40);
-        ctx.font = originalFont;
+
+        const starSize = 32; // Define the star image size (32x32 for compact display)
+        const starImagePath = path.join(__dirname, '../../assets/emojis/star.png');
+
+        try {
+            // Load the star image
+            const starImage = await loadImage(starImagePath);
+
+            // Format the rating text
+            const ratingText = `${rating.toPrecision(1)}`;
+            const textWidth = ctx.measureText(ratingText).width;
+
+            // Draw the star image
+            const starX = x - textWidth - starSize - 8; // Position star to the left of the text
+            const starY = y - starSize / 2; // Align vertically with the text baseline
+            ctx.drawImage(starImage, starX, starY, starSize, starSize);
+
+            // Draw the rating text, right-aligned
+            ctx.textAlign = 'right';
+            ctx.fillText(ratingText, x, y);
+        } catch (error) {
+            console.error('Error rendering star image for rating:', error);
+        }
     }
 
     ctx.textAlign = 'left';
@@ -306,6 +373,8 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
 
     // Only draw the comment box if we should show it
     if (showCommentBox) {
+        console.log(`🗨️ Drawing comment box with ${comments.length} comments`);
+
         const padding = 20;
         const lineHeight = 28; // Increased line height for better emoji rendering
         const boxWidth = 400;
@@ -326,7 +395,9 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
         // Get the track title for the current track
         const shortTitle = title.length > 25 ? title.substring(0, 22) + '...' : title;
 
-        comments.forEach(async (comment, i) => {
+        // Draw author + comment lines, one at a time, awaiting each
+        for (let i = 0; i < comments.length; i++) {
+            const comment = comments[i];
             // Calculate y positions for the two lines
             const y1 = boxY + padding + i * doubleLineHeight + (lineHeight / 2); // First line
             const y2 = y1 + lineHeight; // Second line
@@ -339,7 +410,7 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
             let authorName = comment.author;
             // Remove text in brackets from author name
             authorName = authorName.replace(/\s*\([^)]*\)\s*/g, '');
-            const authorText = `(${authorName})`;
+            const authorText = `${authorName}`;
 
             // Draw author on first line
             ctx.fillStyle = '#FFF';
@@ -349,12 +420,23 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
             ctx.font = '16px sans-serif';
 
             // Render the comment text with emoji images on second line
-            // Remove any mute emoji from the text
+            // Remove any invisible characters and mute emoji from the text
             let commentText = comment.text;
+
+            // Log the raw text for debugging
+            console.log(`Raw comment text: "${commentText}" (Length: ${commentText.length})`);
+
+            // Remove invisible characters (zero-width spaces, etc.)
+            commentText = commentText.replace(/[\u200B-\u200F\uFEFF\u0000-\u001F]/g, '');
+
+            // Log the cleaned text for debugging
+            if (commentText !== comment.text) {
+                console.log(`Cleaned comment text: "${commentText}" (Length: ${commentText.length})`);
+            }
 
             // Draw the comment text on the second line
             await renderTextWithEmojiImages(ctx, commentText, boxX + padding, y2, 16);
-        });
+        }
 
         //console.log('🖼️ Drew comment box with recent chat messages');
     } else if (STATION_CONFIG.enhancedEngagement?.enabled) {
@@ -402,5 +484,4 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
 
 module.exports = {
     updateOverlay,
-    EMOJI_RATINGS
 };

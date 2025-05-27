@@ -7,6 +7,45 @@ const { execSync } = require("child_process");
 const { spawnTrackedProcess } = require("../utils");
 const { STATION_CONFIG, READY_DIR } = require("./config");
 
+/**
+ * Build the FFmpeg video filter string based on configuration
+ * @returns {string} The FFmpeg video filter string
+ */
+function buildVideoFilter() {
+  // Get video configuration with defaults
+  const videoConfig = STATION_CONFIG.video || {};
+  const width = videoConfig.resolution?.width || 1280;
+  const height = videoConfig.resolution?.height || 720;
+  const resizeMode = videoConfig.resizeMode || "height";
+  const enablePadding = videoConfig.enablePadding !== false; // Default to true if not specified
+
+  let filterString = "";
+
+  // Build the scale filter based on resize mode
+  if (resizeMode === "height") {
+    // Scale to match height, maintaining aspect ratio
+    filterString = `scale=-1:${height}`;
+  } else if (resizeMode === "width") {
+    // Scale to match width, maintaining aspect ratio
+    filterString = `scale=${width}:-1`;
+  } else {
+    // Default: scale to exact dimensions (stretch)
+    filterString = `scale=${width}:${height}`;
+  }
+
+  // Add padding if enabled
+  if (enablePadding) {
+    // pad=width:height:x:y
+    // x and y are calculated to center the image
+    filterString += `,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2`;
+  }
+
+  // Add format conversion
+  filterString += ",format=yuv420p";
+
+  return filterString;
+}
+
 let ffmpegStdin;
 let youtubeProc;
 let audioBufferProc;
@@ -196,7 +235,7 @@ function startYouTubeStreamer() {
                 "-i", fifoPath,
 
                 // ───────── Encoders & Filters ─────────
-                "-vf", "scale=1280:720,format=yuv420p",
+                "-vf", buildVideoFilter(),
                 "-r", "30",
                 "-c:v", "libx264",
                 "-preset", "veryfast",

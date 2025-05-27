@@ -5,6 +5,8 @@
  * human-readable sentiment summaries.
  */
 
+// TODO: Upgrade this sentiment analyser with an LLM call as a lot of it will be in emojis, slang and meems
+
 const { STATION_CONFIG } = require('../core/config');
 
 // Sentiment keywords

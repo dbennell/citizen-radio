@@ -28,7 +28,7 @@ The system is built with a modular design consisting of several key components:
 - : Collects and manages user ratings for tracks **ratingsManager.js**
 - : Processes ratings data to generate insights and trends **analyticsEngine.js**
 - : Provides actionable content recommendations based on analytics **recommendationSystem.js**
-- : Manages per-track feedback and sentiment analysis **feedbackManager.js**
+- : Manages per-track feedback, ratings, and sentiment analysis **ratingsManager.js**
 - : Analyzes comment sentiment to generate human-readable summaries **sentimentAnalyzer.js**
 - : Monitors chat for noteworthy comments to reference in segways **engagementMonitor.js**
 

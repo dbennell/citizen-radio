@@ -109,6 +109,14 @@ async function fetchLiveChatId(videoId) {
 
 
 // Poll YouTube for stream chat
+// Store the nextPageToken between calls to avoid fetching duplicate messages
+let nextPageToken = null;
+// Store the recommended polling interval from YouTube
+let recommendedPollingIntervalMs = null;
+// Track backoff state for rate limiting
+let backoffMultiplier = 1;
+let lastRateLimitError = null;
+
 /**
  * Read live-stream chat messages for a given YouTube videoId
  * @param {string} videoId – The YouTube live video ID
@@ -138,15 +146,110 @@ async function readLiveChat(videoId) {
 
     // 4) Pull the actual live-chat messages
     try {
-        const response = await youtube.liveChatMessages.list({
+        // Build request parameters
+        const params = {
             part: 'snippet,authorDetails',
             liveChatId,
             maxResults: 200
-        });
+        };
+
+        // Add pageToken if we have one from a previous call
+        if (nextPageToken) {
+            params.pageToken = nextPageToken;
+            //console.log(`Using pageToken to fetch only new messages since last poll`);
+        } else {
+            console.log(`First poll or reset: fetching latest messages`);
+        }
+
+        const response = await youtube.liveChatMessages.list(params);
+
+        // Store the nextPageToken for the next call
+        nextPageToken = response.data.nextPageToken || null;
+
+        // Store and log polling information
+        if (response.data.pollingIntervalMillis) {
+            recommendedPollingIntervalMs = response.data.pollingIntervalMillis;
+            //console.log(`YouTube recommends polling again in ${recommendedPollingIntervalMs/1000} seconds`);
+        }
+
         return response.data.items || [];
     } catch (error) {
-        console.error('YouTube liveChatMessages API error:', error);
-        return [];
+        //console.error('YouTube liveChatMessages API error:', error);
+
+        // Check if this is a rate limit error
+        if (error.errors && 
+            error.errors.some(e => e.reason === 'rateLimitExceeded')) {
+
+            // Record the time of this rate limit error
+            lastRateLimitError = new Date();
+
+            // Increase backoff multiplier (quadruple it each time, up to a higher limit)
+            // Using a more aggressive backoff to ensure we don't hit rate limits repeatedly
+            backoffMultiplier = Math.min(backoffMultiplier * 4, 32);
+
+            console.log(`⚠ YouTube rate limit exceeded. Increasing polling interval by ${backoffMultiplier}x`);
+
+            // Don't reset the pageToken for rate limit errors
+            // This way we'll continue from where we left off
+            return [];
+        } else {
+            // For other errors, reset backoff if it's been more than 5 minutes since last rate limit error
+            if (lastRateLimitError && 
+                (new Date() - lastRateLimitError > 5 * 60 * 1000)) {
+                backoffMultiplier = 1;
+                lastRateLimitError = null;
+                console.log('✅ Resetting YouTube API backoff after 5 minutes without rate limit errors');
+            }
+
+            // Reset the pageToken on other errors to avoid getting stuck
+            nextPageToken = null;
+            return [];
+        }
+    }
+}
+
+/**
+ * Get the recommended polling interval from YouTube, adjusted for backoff if rate limiting occurred
+ * @returns {number|null} - The recommended polling interval in milliseconds, or null if not available
+ */
+function getRecommendedPollingInterval() {
+    if (!recommendedPollingIntervalMs) return null;
+
+    // Apply backoff multiplier to the recommended polling interval
+    const adjustedInterval = recommendedPollingIntervalMs * backoffMultiplier;
+
+    // If we're in backoff mode, log the adjusted interval
+    if (backoffMultiplier > 1) {
+        console.log(`ℹ Using adjusted polling interval: ${adjustedInterval}ms (${backoffMultiplier}x backoff)`);
+    }
+
+    return adjustedInterval;
+}
+
+/**
+ * Reset the backoff state for YouTube API rate limiting
+ */
+function resetYouTubeBackoff() {
+    if (backoffMultiplier > 1) {
+        console.log('Resetting YouTube API backoff multiplier');
+        backoffMultiplier = 1;
+        lastRateLimitError = null;
+    }
+}
+
+/**
+ * Reset the nextPageToken to fetch from the beginning next time
+ * This should be called when starting a new track or closing a comment window
+ * @param {boolean} resetBackoff - Whether to also reset the backoff state (default: true)
+ */
+function resetChatPagination(resetBackoff = true) {
+    if (nextPageToken) {
+        console.log('Resetting chat pagination token');
+        nextPageToken = null;
+    }
+
+    if (resetBackoff) {
+        resetYouTubeBackoff();
     }
 }
 
@@ -211,6 +314,7 @@ function buildFallbackMetadata(filePath) {
 /**
  * Extracts metadata from an MP3 file using ID3 tags.
  * Falls back to using the filename as the title if tags are missing.
+ * Also extracts rating information from custom frames if available.
  * @param {string} filePath
  * @returns {Object}
  */
@@ -236,6 +340,7 @@ function extractMetadata(filePath) {
             comment: tags.comment || null,
             filename: fallback.filename
         };
+
         // If an embedded picture (APIC) exists, expose it as `picture`
         if (tags.image) {
             // NodeID3.read often returns tags.image.imageBuffer
@@ -245,6 +350,26 @@ function extractMetadata(filePath) {
                 mime: tags.image.mime || 'image/jpeg'
             };
         }
+
+        // Extract rating information from custom frames if available
+        if (tags.userDefinedText) {
+            // Helper function to get a custom frame value
+            const getCustomFrame = (description) => {
+                const frame = tags.userDefinedText.find(
+                    frame => frame.description === description
+                );
+                return frame ? frame.text : null;
+            };
+
+            const ratingText = getCustomFrame('RATING');
+            if (ratingText) {
+                meta.rating = parseFloat(ratingText);
+                meta.ratingCount = parseInt(getCustomFrame('RATING_COUNT') || '0', 10);
+                meta.sentiment = getCustomFrame('SENTIMENT') || '';
+                meta.lastRatingUpdate = getCustomFrame('LAST_UPDATED') || '';
+            }
+        }
+
         return meta;
     } catch (err) {
         console.error(`Error extracting metadata from ${filePath}:`, err);
@@ -314,7 +439,7 @@ function killAllTrackedProcesses() {
 
 /**
  * Fetch the last N chat comments for display in the overlay
- * Only returns messages that contain rating emojis to keep the chat clean
+ * Only returns messages that contain rating emojis and were received since the start of the current track
  * @param {string} videoId - The YouTube video ID
  * @param {number} maxComments - Maximum number of comments to fetch
  * @returns {Promise<Object[]>} - Array of comment objects with text and author
@@ -326,49 +451,122 @@ async function fetchLastChatComments(videoId, maxComments = 10) {
     }
 
     try {
-        const messages = await readLiveChat(videoId);
-
-        // Import the emoji ratings from ratingsManager
+        // Import the emoji ratings and current track info from ratingsManager
         const ratingManager = require('../managers/ratingsManager');
         const { EMOJI_RATINGS } = ratingManager;
 
-        // Filter messages containing rating emojis, extract text and author, and limit to maxComments
-        return messages
-            .filter(msg => {
-                const text = msg.snippet.displayMessage || 
-                           msg.snippet.textMessageDetails?.messageText || '';
+        // Get the current track information
+        // This is set by ratingsManager.setCurrentlyPlaying when a new track starts
+        const currentTrack = ratingManager.getCurrentlyPlaying ? ratingManager.getCurrentlyPlaying() : null;
+        const currentTrackStartTime = currentTrack?.startTime || null;
+        const currentTrackPath = currentTrack?.rel || null;
 
-                // Only keep messages that contain at least one rating emoji
-                if (text.trim() === '') return false;
-                for (const char of text) {
-                    // Need to handle different Unicode representations of emojis
-                    // But be more precise to avoid false positives with invisible characters
-                    const matchingEmoji = Object.keys(EMOJI_RATINGS).find(emoji => 
-                        emoji === char || 
-                        (emoji.includes(char) && char.trim() !== '') || 
-                        (char.includes(emoji) && emoji.trim() !== '')
-                    );
-                    if (matchingEmoji) {
-                        return true;
+        // If we don't have a current track or start time, just filter by emoji
+        const shouldFilterByTime = currentTrackStartTime instanceof Date;
+
+        if (shouldFilterByTime) {
+            console.log(`🗨️ Filtering chat messages since track start: ${currentTrackStartTime.toISOString()}`);
+        } else {
+            console.log(`🗨️ No current track start time available, not filtering by time`);
+        }
+
+        // Fetch messages from YouTube API
+        const messages = await readLiveChat(videoId);
+
+        // If we got messages from YouTube, process them normally
+        if (messages && messages.length > 0) {
+            // Filter messages containing rating emojis, extract text and author, and limit to maxComments
+            const filteredMessages = messages
+                .filter(msg => {
+                    const text = msg.snippet.displayMessage || 
+                               msg.snippet.textMessageDetails?.messageText || '';
+                    const publishedAt = msg.snippet.publishedAt;
+
+                    // Only keep messages that contain at least one rating emoji
+                    if (text.trim() === '') return false;
+
+                    // Check if the message contains a rating emoji
+                    let hasRatingEmoji = false;
+
+                    // First, try the exact match approach from parseRatingFromComment
+                    for (const char of text) {
+                        if (EMOJI_RATINGS[char] !== undefined) {
+                            hasRatingEmoji = true;
+                            break;
+                        }
                     }
-                }
-                return false;
-            })
-            .map(msg => {
-                let text = msg.snippet.displayMessage || 
-                          msg.snippet.textMessageDetails?.messageText || '';
 
-                // Remove all instances of the mute emoji (🔇) from the text
-                // Using a more comprehensive approach to catch variations and invisible characters
-                const muteEmojiPattern = new RegExp('\\s*[\\u{1F507}]\\s*', 'gu'); // Unicode for 🔇 with optional whitespace
-                text = text.replace(muteEmojiPattern, '').trim();
+                    // If no exact match, try a more lenient approach
+                    if (!hasRatingEmoji) {
+                        // Check for any emoji-like character in the text
+                        const emojiPattern = /[\u{1F300}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/u;
+                        hasRatingEmoji = emojiPattern.test(text);
 
-                return {
-                    text: text,
-                    author: msg.authorDetails?.displayName || 'Anonymous'
-                };
-            })
-            .slice(0, maxComments);
+                        if (hasRatingEmoji) {
+                            console.log(`Found emoji-like character in: "${text}"`);
+                        }
+                    }
+
+                    // For debugging
+                    if (hasRatingEmoji) {
+                        console.log(`Comment with emoji accepted: "${text}"`);
+                    }
+
+                    if (!hasRatingEmoji) return false;
+
+                    // If we should filter by time, check if the message was published after the track started
+                    if (shouldFilterByTime && publishedAt) {
+                        const commentTime = new Date(publishedAt);
+                        return commentTime >= currentTrackStartTime;
+                    }
+
+                    // If we're not filtering by time or the message doesn't have a timestamp, just check for emoji
+                    return true;
+                })
+                .map(msg => {
+                    let text = msg.snippet.displayMessage || 
+                              msg.snippet.textMessageDetails?.messageText || '';
+
+                    // Remove all instances of the mute emoji (🔇) from the text
+                    // Using a more comprehensive approach to catch variations and invisible characters
+                    const muteEmojiPattern = new RegExp('\\s*[\\u{1F507}]\\s*', 'gu'); // Unicode for 🔇 with optional whitespace
+                    text = text.replace(muteEmojiPattern, '').trim();
+
+                    return {
+                        text: text,
+                        author: msg.authorDetails?.displayName || 'Anonymous'
+                    };
+                })
+                .slice(0, maxComments);
+
+            console.log(`🗨️ Processed ${filteredMessages.length} comments from YouTube API`);
+            return filteredMessages;
+        } 
+        // If we didn't get any messages from YouTube (possibly due to rate limiting),
+        // try to use the feedback log as a fallback
+        else if (currentTrackPath) {
+            console.log(`🗨️ No messages from YouTube API, using feedback log as fallback`);
+
+            // Read from the feedback log
+            const feedbackLog = ratingManager.readFeedbackLog();
+
+            // Filter feedback entries for the current track
+            const trackFeedback = feedbackLog
+                .filter(entry => entry.trackPath === currentTrackPath)
+                // Sort by timestamp (newest first)
+                .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+                // Map to the format expected by the overlay
+                .map(entry => ({
+                    text: entry.comment,
+                    author: entry.author
+                }))
+                .slice(0, maxComments);
+
+            console.log(`🗨️ Found ${trackFeedback.length} comments in feedback log for current track`);
+            return trackFeedback;
+        }
+
+        return [];
     } catch (error) {
         console.error('Error fetching chat comments:', error);
         return [];
@@ -383,5 +581,8 @@ module.exports = {
     runningProcesses,
     fetchLiveVideoId,
     readLiveChat,
-    fetchLastChatComments
+    resetChatPagination,
+    resetYouTubeBackoff,
+    fetchLastChatComments,
+    getRecommendedPollingInterval
 };

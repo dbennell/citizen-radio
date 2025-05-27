@@ -9,7 +9,7 @@ const chalk = require('chalk').default;
 const ratingManager = require('../managers/ratingsManager');
 const engagementMonitor = require('../managers/engagementMonitor');
 const overlayManager = require('../managers/overlayManager');
-const { fetchLiveVideoId, extractMetadata } = require('../utils');
+const { fetchLiveVideoId, extractMetadata, getRecommendedPollingInterval } = require('../utils');
 const ContentQueueManager = require('../managers/contentQueueManager');
 
 let shouldStop = false;
@@ -148,25 +148,56 @@ async function playbackLoop() {
                     // Set up periodic feedback polling based on configuration
                     if (STATION_CONFIG.enhancedEngagement?.enabled && vid) {
                         // Get the configured interval (in seconds) or default to 5 seconds
-                        const checkIntervalSeconds = STATION_CONFIG.ratingSystem?.commentCheckInterval || 5;
-                        const checkIntervalMs = checkIntervalSeconds * 1000;
+                        const configIntervalSeconds = STATION_CONFIG.ratingSystem?.commentCheckInterval || 5;
+                        const configIntervalMs = configIntervalSeconds * 1000;
 
-                        feedbackPollingInterval = setInterval(async () => {
-                            try {
-                                // Poll for new comments
-                                const count = await ratingManager.pollForComments(vid);
-                                if (count > 0) {
-                                    console.log(`📊 Collected ${count} comment${count===1?'':'s'} during playback`);
-
-                                    // Update the overlay with new comments
-                                    if (STATION_CONFIG.streamMode === 'youtube') {
-                                        await overlayManager.updateOverlay(queueItem.filepath, vid);
-                                    }
-                                }
-                            } catch (error) {
-                                console.error('Error polling for comments:', error);
+                        // Function to create a new polling interval with dynamic timing
+                        const createPollingInterval = () => {
+                            // Clear any existing interval
+                            if (feedbackPollingInterval) {
+                                clearTimeout(feedbackPollingInterval);
+                                feedbackPollingInterval = null;
                             }
-                        }, checkIntervalMs); // Check based on configured interval
+
+                            // Get the recommended polling interval from YouTube, or use the configured interval
+                            const recommendedInterval = getRecommendedPollingInterval();
+                            const intervalMs = recommendedInterval || configIntervalMs;
+
+                            // Create a new interval with the appropriate timing
+                            feedbackPollingInterval = setTimeout(async () => {
+                                try {
+                                    // Poll for new comments
+                                    const count = await ratingManager.pollForComments(vid);
+                                    if (count > 0) {
+                                        console.log(`📊 Collected ${count} comment${count===1?'':'s'} during playback`);
+
+                                        // Update the overlay with new comments, but only if we have comments to show
+                                        // This avoids making an unnecessary API call when there are no new comments
+                                        if (STATION_CONFIG.streamMode === 'youtube' && count > 0) {
+                                            try {
+                                                await overlayManager.updateOverlay(queueItem.filepath, vid);
+                                            } catch (overlayError) {
+                                                console.error('Error updating overlay:', overlayError);
+                                                // Don't rethrow, continue with the next polling interval
+                                            }
+                                        }
+                                    }
+
+                                    // Set up the next polling interval
+                                    createPollingInterval();
+                                } catch (error) {
+                                    console.error('Error polling for comments:', error);
+                                    // Still set up the next interval even if there was an error
+                                    // But use a longer interval to avoid hitting rate limits
+                                    setTimeout(() => {
+                                        createPollingInterval();
+                                    }, intervalMs * 2); // Double the interval on error
+                                }
+                            }, intervalMs);
+                        };
+
+                        // Start the polling process
+                        createPollingInterval();
                     }
                 }
 
@@ -189,7 +220,7 @@ async function playbackLoop() {
                 if (queueItem.type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
                     // Clear the polling interval
                     if (feedbackPollingInterval) {
-                        clearInterval(feedbackPollingInterval);
+                        clearTimeout(feedbackPollingInterval);
                         feedbackPollingInterval = null;
                     }
 
@@ -197,9 +228,9 @@ async function playbackLoop() {
                     const count = await ratingManager.pollForComments(vid);
                     console.log(`📊 Collected ${count} comment${count===1?'':'s'} up to ${windowEnd}`);
 
-                    // Clear comments from overlay and engagement monitor when track ends
+                    // Update overlay without clearing comments when track ends
                     if (STATION_CONFIG.streamMode === 'youtube') {
-                        await overlayManager.updateOverlay(queueItem.filepath, vid, true);
+                        await overlayManager.updateOverlay(queueItem.filepath, vid, false);
                     }
 
                     // Reset engagement monitor comments when track ends
