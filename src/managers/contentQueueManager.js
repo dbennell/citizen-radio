@@ -94,8 +94,15 @@ class ContentQueueManager {
   /**
    * Check and generate segways for items that have moved up in the queue
    * This ensures tracks in positions 1 and 2 have segways generated for them
+   * 
+   * NOTE: Disabled to prevent duplicate segway generation since segways are 
+   * already generated during queue replenishment in prepareNextContent()
    */
   async checkAndGenerateSegwaysForQueueItems() {
+    // DISABLED: This was causing duplicate segway generation
+    // Segways are now only generated during queue replenishment
+    return;
+
     // Only process if we have items in the queue and a last played item
     if (this.contentQueue.length === 0 || !this.lastPlayedItem) {
       return;
