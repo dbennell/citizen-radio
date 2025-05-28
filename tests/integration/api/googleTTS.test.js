@@ -23,7 +23,7 @@ conditionalTest('Google Cloud TTS API Integration', () => {
     if (!fs.existsSync(tempOutputDir)) {
       fs.mkdirSync(tempOutputDir, { recursive: true });
     }
-    
+
     // Initialize TTS client
     ttsClient = new TextToSpeechClient();
   });
@@ -39,7 +39,7 @@ conditionalTest('Google Cloud TTS API Integration', () => {
   });
 
   beforeEach(() => {
-    jest.setTimeout(30000); // Increase timeout for API calls
+    jest.setTimeout(60000); // Increase timeout for API calls to 60 seconds
   });
 
   test('should connect to Google Cloud TTS API and synthesize speech', async () => {
@@ -48,23 +48,23 @@ conditionalTest('Google Cloud TTS API Integration', () => {
 
     // Simple text to synthesize
     const text = "Hello, I'm testing the Google Cloud Text-to-Speech API integration.";
-    
+
     // Make a direct API call
     const [response] = await ttsClient.synthesizeSpeech({
       input: { text },
       voice: { languageCode: 'en-US', ssmlGender: 'NEUTRAL' },
       audioConfig: { audioEncoding: 'MP3' },
     });
-    
+
     // Verify we got a response with audio content
     expect(response).toBeDefined();
     expect(response.audioContent).toBeDefined();
     expect(response.audioContent.length).toBeGreaterThan(0);
-    
+
     // Write the audio content to a file to verify it's valid
     const outputFile = path.join(tempOutputDir, 'test_tts_output.mp3');
     fs.writeFileSync(outputFile, response.audioContent);
-    
+
     // Verify the file exists and has content
     expect(fs.existsSync(outputFile)).toBe(true);
     expect(fs.statSync(outputFile).size).toBeGreaterThan(0);
@@ -76,18 +76,18 @@ conditionalTest('Google Cloud TTS API Integration', () => {
 
     // Get the list of available voices
     const [result] = await ttsClient.listVoices({});
-    
+
     // Verify we got a response with voices
     expect(result).toBeDefined();
     expect(result.voices).toBeDefined();
     expect(result.voices.length).toBeGreaterThan(0);
-    
+
     // Verify we have English voices
     const englishVoices = result.voices.filter(
       voice => voice.languageCodes.some(code => code.startsWith('en-'))
     );
     expect(englishVoices.length).toBeGreaterThan(0);
-    
+
     // Log some voice information for debugging
     console.log(`Found ${englishVoices.length} English voices`);
     console.log('Sample voice:', englishVoices[0].name);
@@ -99,12 +99,12 @@ conditionalTest('Google Cloud TTS API Integration', () => {
 
     // Test assigning a voice to a speaker
     const result = await voiceManager.assignVoiceToName('Test Speaker', 'Host', 'male');
-    
+
     // Verify we got a valid voice assignment
     expect(result).toBeDefined();
     expect(result.voiceName).toBeDefined();
     expect(result.speakerId).toBeDefined();
-    
+
     // Log the assigned voice for debugging
     console.log('Assigned voice:', result.voiceName);
   });
@@ -115,21 +115,21 @@ conditionalTest('Google Cloud TTS API Integration', () => {
 
     // Create an instance of the audio synthesizer
     const synth = new audioSynthesizer();
-    
+
     // Test text to synthesize
     const text = "This is a test of the audio synthesizer component.";
-    
+
     // Synthesize speech
     const outputFile = await synth.synthesizeSpeech(text, {
       voiceName: 'en-US-Wavenet-F',
       outputPath: tempOutputDir
     });
-    
+
     // Verify we got a valid output file
     expect(outputFile).toBeDefined();
     expect(fs.existsSync(outputFile)).toBe(true);
     expect(fs.statSync(outputFile).size).toBeGreaterThan(0);
-    
+
     // Log the output file for debugging
     console.log('Synthesized audio file:', outputFile);
   });
@@ -145,7 +145,7 @@ conditionalTest('Google Cloud TTS API Integration', () => {
         voice: { name: 'non-existent-voice' },
         audioConfig: { audioEncoding: 'MP3' },
       });
-      
+
       // If we get here, the API didn't throw an error as expected
       console.log('Unexpected success:', response);
       expect(false).toBe(true); // Force test to fail

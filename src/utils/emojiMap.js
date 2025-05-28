@@ -16,7 +16,7 @@ function buildEmojiMap() {
 
     // Direct mappings for emoji ratings (from README.md)
     const directMappings = {
-        '🔇': 'mute.png', // This file doesn't exist, will try to find similar
+       /// '🔇': 'mute.png', // This file doesn't exist, will try to find similar
         '😡': 'angry.png',
         '🤬': 'face_with_symbols_on_mouth.png', // Updated to match existing file
         '🤡': 'clown_face.png', // Updated to match existing file
@@ -56,7 +56,7 @@ function buildEmojiMap() {
             map[char] = path.join(EMOJI_DIR, file);
             //console.log(`Mapped emoji ${char} to file ${file}`);
         } else {
-            console.log(`Could not map file ${file} to an emoji character`);
+            //console.log(`Could not map file ${file} to an emoji character`);
         }
     }
 

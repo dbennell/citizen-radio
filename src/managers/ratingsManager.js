@@ -7,6 +7,7 @@ const { STATION_CONFIG } = require('../core/config'); // Fix the import to use d
 const engagementMonitor = require('./engagementMonitor');
 const sentimentAnalyzer = require('../utils/sentimentAnalyzer');
 const NodeID3 = require('node-id3');
+const fileUtils = require('../utils/fileUtils');
 
 let commentWindow = { start: Date.now(), end: Date.now() };
 
@@ -25,8 +26,13 @@ const feedbackLogPath = path.join(__dirname, '../../data/feedback.log');
 // Path to the ratings log file
 const ratingPath = path.join(__dirname, '../../data/ratings.log');
 
-// Initialize log files if they don't exist
-function initLogFiles() {
+// Buffered write streams for log files
+let chatLogStream;
+let feedbackLogStream;
+let ratingsStream;
+
+// Initialize log files and buffered write streams
+async function initLogFiles() {
     const dataDir = path.join(__dirname, '../../data');
     if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
@@ -34,39 +40,46 @@ function initLogFiles() {
 
     // Initialize chat.log
     if (!fs.existsSync(chatLogPath)) {
-        fs.writeFileSync(chatLogPath, JSON.stringify([], null, 2));
+        await fileUtils.updateJsonFile(chatLogPath, []);
         console.log('Chat log initialized');
     }
 
     // Initialize feedback.log
     if (!fs.existsSync(feedbackLogPath)) {
-        fs.writeFileSync(feedbackLogPath, JSON.stringify([], null, 2));
+        await fileUtils.updateJsonFile(feedbackLogPath, []);
         console.log('Feedback log initialized');
     }
 
     // Initialize ratings.log
     if (!fs.existsSync(ratingPath)) {
-        fs.writeFileSync(ratingPath, JSON.stringify({}, null, 2));
+        await fileUtils.updateJsonFile(ratingPath, {});
         console.log('Ratings file initialized');
     }
+
+    // Initialize buffered write streams
+    chatLogStream = fileUtils.getBufferedWriteStream(chatLogPath, 'chat');
+    feedbackLogStream = fileUtils.getBufferedWriteStream(feedbackLogPath, 'feedback');
+    ratingsStream = fileUtils.getBufferedWriteStream(ratingPath, 'ratings');
 }
 
 // Initialize log files on module load
-initLogFiles();
+initLogFiles().catch(error => {
+    console.error('Error initializing log files:', error);
+});
 
 // Load processed message IDs from disk if available
-try {
-    if (fs.existsSync(processedIdsPath)) {
-        const data = JSON.parse(fs.readFileSync(processedIdsPath, 'utf8'));
+(async function loadProcessedMessageIds() {
+    try {
+        const data = await fileUtils.readJsonFile(processedIdsPath, []);
         processedMessageIds = new Set(data);
         //console.log(`[Rating Debug] Loaded ${processedMessageIds.size} processed message IDs`);
+    } catch (error) {
+        console.error('Error loading processed message IDs:', error);
     }
-} catch (error) {
-    console.error('Error loading processed message IDs:', error);
-}
+})();
 
 // Save processed message IDs to disk
-function saveProcessedMessageIds() {
+async function saveProcessedMessageIds() {
     try {
         // Limit the size of the set to prevent it from growing too large
         // Keep only the most recent 10000 IDs
@@ -76,12 +89,8 @@ function saveProcessedMessageIds() {
             processedMessageIds = new Set(idsArray);
         }
 
-        // Write to a temporary file first to avoid corruption if the process crashes
-        const tempPath = `${processedIdsPath}.tmp`;
-        fs.writeFileSync(tempPath, JSON.stringify(idsArray, null, 2));
-
-        // Rename the temporary file to the actual file
-        fs.renameSync(tempPath, processedIdsPath);
+        // Use atomic file update
+        await fileUtils.updateJsonFile(processedIdsPath, idsArray);
 
         console.log(`[Debug] Saved ${idsArray.length} processed message IDs`);
         return true;
@@ -95,10 +104,10 @@ function saveProcessedMessageIds() {
  * Clear all processed message IDs
  * This is useful when the stream ends or when the application restarts
  */
-function clearProcessedMessageIds() {
+async function clearProcessedMessageIds() {
     processedMessageIds.clear();
     try {
-        fs.writeFileSync(processedIdsPath, JSON.stringify([], null, 2));
+        await fileUtils.updateJsonFile(processedIdsPath, []);
         //console.log('[Rating Debug] Cleared processed message IDs');
         return true;
     } catch (error) {
@@ -160,33 +169,85 @@ let currentlyPlaying = null;
 /**
  * Load ratings from disk
  * 
- * @returns {Object} - The ratings data
+ * @returns {Promise<Object>} - The ratings data
  */
-function loadRatings() {
+async function loadRatings() {
     try {
-        if (fs.existsSync(ratingPath)) {
-            return JSON.parse(fs.readFileSync(ratingPath, 'utf8'));
+        // Try to read the ratings file
+        const ratings = await fileUtils.readJsonFile(ratingPath, {});
+
+        // If we got a valid object, return it
+        if (ratings && typeof ratings === 'object' && !Array.isArray(ratings)) {
+            return ratings;
         }
+
+        // If we got something else, log a warning and return an empty object
+        console.warn('Ratings file contained invalid data, using empty ratings object');
         return {};
     } catch (error) {
         console.error('Error loading ratings:', error);
+
+        // If there's an error, try to fix the ratings file
+        try {
+            const { execSync } = require('child_process');
+            console.log('Attempting to fix ratings file...');
+            execSync('node scripts/fix-ratings-log.js', { stdio: 'inherit' });
+
+            // Try to read the fixed file
+            try {
+                const fixedRatings = await fileUtils.readJsonFile(ratingPath, {});
+                if (fixedRatings && typeof fixedRatings === 'object' && !Array.isArray(fixedRatings)) {
+                    console.log('Successfully fixed and loaded ratings file');
+                    return fixedRatings;
+                }
+            } catch (fixedError) {
+                console.error('Error loading fixed ratings file:', fixedError);
+            }
+        } catch (fixError) {
+            console.error('Error fixing ratings file:', fixError);
+        }
+
+        // If all else fails, return an empty object
         return {};
     }
 }
 
 /**
  * Save ratings to disk
- * 
  * @param {Object} ratings - The ratings data to save
- * @returns {boolean} - Success status
+ * @returns {Promise<boolean>} - Success status
  */
-function saveRatings(ratings) {
+async function saveRatings(ratings) {
     try {
-        fs.writeFileSync(ratingPath, JSON.stringify(ratings, null, 2));
-        return true;
+        // Use the new safeAppendJsonToFile function to prevent corruption
+        const result = await fileUtils.safeAppendJsonToFile(ratingPath, ratings);
+
+        if (result) {
+            console.log('[RatingsManager] Successfully saved ratings to disk using safe append.');
+        } else {
+            console.warn('[RatingsManager] Failed to save ratings using safe append.');
+        }
+
+        return result;
     } catch (error) {
-        console.error('Error saving ratings:', error);
-        return false;
+        console.error('[RatingsManager] Error saving ratings:', error);
+
+        // Attempt emergency recovery
+        try {
+            console.log('[RatingsManager] Attempting emergency save with direct file write...');
+
+            // Create a backup first
+            const backupPath = `${ratingPath}.backup-${Date.now()}`;
+            await fs.promises.copyFile(ratingPath, backupPath).catch(() => {});
+
+            // Write directly to file
+            await fs.promises.writeFile(ratingPath, JSON.stringify(ratings, null, 2), 'utf8');
+            console.log('[RatingsManager] Emergency save successful.');
+            return true;
+        } catch (emergencyError) {
+            console.error('[RatingsManager] Emergency save failed:', emergencyError);
+            return false;
+        }
     }
 }
 
@@ -356,9 +417,10 @@ function setCurrentlyPlaying(trackInfo) {
  * Update track rating in the database
  * @param {string} trackPath - Path to the track
  * @param {Object} ratingData - Rating information
+ * @returns {Promise<void>} - Promise that resolves when the update is complete
  */
-function updateTrackRating(trackPath, ratingData) {
-    const ratings = loadRatings();
+async function updateTrackRating(trackPath, ratingData) {
+    const ratings = await loadRatings();
 
     if (!ratings[trackPath]) {
         ratings[trackPath] = {
@@ -390,7 +452,7 @@ function updateTrackRating(trackPath, ratingData) {
         ratings[trackPath].lastUpdated = new Date().toISOString();
     }
 
-    saveRatings(ratings);
+    await saveRatings(ratings);
 
     // Log the rating for debugging
     console.log(`[Rating Debug] Added rating ${ratingData.value}★ for "${trackPath}" (${ratings[trackPath].ratingCount} total ratings)`);
@@ -400,7 +462,7 @@ function updateTrackRating(trackPath, ratingData) {
     const maxFeedback = STATION_CONFIG.metadataIntegration?.maxFeedbackPerTrack || 25;
 
     // Count feedback entries for this track in the feedback log
-    const feedbackLog = readFeedbackLog();
+    const feedbackLog = await readFeedbackLog();
     const trackFeedbackCount = feedbackLog.filter(entry => entry.trackPath === trackPath).length;
 
     if (STATION_CONFIG.metadataIntegration?.enabled && 
@@ -413,11 +475,11 @@ function updateTrackRating(trackPath, ratingData) {
         }
 
         // Remove entries from feedback log and get them for processing
-        const feedbackEntries = removeFromFeedbackLog(trackPath);
+        const feedbackEntries = await removeFromFeedbackLog(trackPath);
 
         if (feedbackEntries.length > 0) {
             // Process feedback and update MP3 metadata
-            processFeedbackAndUpdateMetadata(trackPath, feedbackEntries);
+            await processFeedbackAndUpdateMetadata(trackPath, feedbackEntries);
         }
 
         // Clear ratings from ratings.log after processing
@@ -446,14 +508,11 @@ function getTicketsForTrack(rating) {
 
 /**
  * Read messages from the chat log
- * @returns {Array} - Array of chat messages
+ * @returns {Promise<Array>} - Array of chat messages
  */
-function readChatLog() {
+async function readChatLog() {
     try {
-        if (fs.existsSync(chatLogPath)) {
-            return JSON.parse(fs.readFileSync(chatLogPath, 'utf8'));
-        }
-        return [];
+        return await fileUtils.readJsonFile(chatLogPath, []);
     } catch (error) {
         console.error('Error reading chat log:', error);
         return [];
@@ -463,12 +522,12 @@ function readChatLog() {
 /**
  * Append messages to the chat log
  * @param {Array} messages - Array of chat messages to append
- * @returns {boolean} - Success status
+ * @returns {Promise<boolean>} - Success status
  */
-function appendToChatLog(messages) {
+async function appendToChatLog(messages) {
     try {
         // Read existing log
-        const chatLog = readChatLog();
+        const chatLog = await readChatLog();
 
         // Get existing message IDs for deduplication
         const existingIds = new Set(chatLog.map(msg => msg.id));
@@ -480,15 +539,15 @@ function appendToChatLog(messages) {
             return true; // No new messages to add
         }
 
-        // Append new messages
-        const updatedLog = [...chatLog, ...newMessages];
-
         // Limit the size of the log to prevent it from growing too large
         // Keep only the most recent 1000 messages
-        const prunedLog = updatedLog.length > 1000 ? updatedLog.slice(updatedLog.length - 1000) : updatedLog;
+        let updatedLog = [...chatLog, ...newMessages];
+        if (updatedLog.length > 1000) {
+            updatedLog = updatedLog.slice(updatedLog.length - 1000);
+        }
 
-        // Write updated log
-        fs.writeFileSync(chatLogPath, JSON.stringify(prunedLog, null, 2));
+        // Use buffered write stream
+        await fileUtils.updateJsonFile(chatLogPath, updatedLog);
 
         console.log(`[Chat Log] Added ${newMessages.length} new messages to chat log`);
         return true;
@@ -500,14 +559,11 @@ function appendToChatLog(messages) {
 
 /**
  * Read entries from the feedback log
- * @returns {Array} - Array of feedback entries
+ * @returns {Promise<Array>} - Array of feedback entries
  */
-function readFeedbackLog() {
+async function readFeedbackLog() {
     try {
-        if (fs.existsSync(feedbackLogPath)) {
-            return JSON.parse(fs.readFileSync(feedbackLogPath, 'utf8'));
-        }
-        return [];
+        return await fileUtils.readJsonFile(feedbackLogPath, []);
     } catch (error) {
         console.error('Error reading feedback log:', error);
         return [];
@@ -517,12 +573,12 @@ function readFeedbackLog() {
 /**
  * Append a feedback entry to the feedback log
  * @param {Object} feedback - Feedback entry to append
- * @returns {boolean} - Success status
+ * @returns {Promise<boolean>} - Success status
  */
-function appendToFeedbackLog(feedback) {
+async function appendToFeedbackLog(feedback) {
     try {
         // Read existing log
-        const feedbackLog = readFeedbackLog();
+        const feedbackLog = await readFeedbackLog();
 
         // Check for duplicates before appending
         const isDuplicate = feedbackLog.some(entry => 
@@ -537,11 +593,8 @@ function appendToFeedbackLog(feedback) {
             return true; // Return true since we successfully handled the feedback (by skipping it)
         }
 
-        // Append new feedback
-        feedbackLog.push(feedback);
-
-        // Write updated log
-        fs.writeFileSync(feedbackLogPath, JSON.stringify(feedbackLog, null, 2));
+        // Use buffered write stream to append new feedback
+        await fileUtils.appendToJsonLog(feedbackLogPath, 'feedback', feedback);
 
         console.log(`[Feedback Log] Added new feedback for "${feedback.trackPath}"`);
         return true;
@@ -555,12 +608,12 @@ function appendToFeedbackLog(feedback) {
  * Remove entries from the feedback log for a specific track
  * @param {string} trackPath - Path to the track
  * @param {number} count - Number of entries to remove (default: all)
- * @returns {Array} - Removed entries
+ * @returns {Promise<Array>} - Removed entries
  */
-function removeFromFeedbackLog(trackPath, count = Infinity) {
+async function removeFromFeedbackLog(trackPath, count = Infinity) {
     try {
         // Read existing log
-        const feedbackLog = readFeedbackLog();
+        const feedbackLog = await readFeedbackLog();
 
         // Find entries for the specified track
         const trackEntries = feedbackLog.filter(entry => entry.trackPath === trackPath);
@@ -574,8 +627,8 @@ function removeFromFeedbackLog(trackPath, count = Infinity) {
         // Update the log
         const updatedLog = [...otherEntries, ...remainingTrackEntries];
 
-        // Write updated log
-        fs.writeFileSync(feedbackLogPath, JSON.stringify(updatedLog, null, 2));
+        // Use atomic file update
+        await fileUtils.updateJsonFile(feedbackLogPath, updatedLog);
 
         console.log(`[Feedback Log] Removed ${removeCount} entries for "${trackPath}"`);
         return entriesToRemove;
@@ -606,7 +659,7 @@ async function pollForComments(videoId) {
     //console.log(`[Rating Debug] Fetched ${messages.length} chat messages`);
 
     // 2) Append messages to chat log
-    appendToChatLog(messages);
+    await appendToChatLog(messages);
 
     // 3) Process only those inside our window
     let processed = 0;
@@ -670,18 +723,24 @@ async function pollForComments(videoId) {
             comment: text,
             timestamp: rating.timestamp
         };
-        appendToFeedbackLog(feedbackEntry);
+        await appendToFeedbackLog(feedbackEntry);
 
         // 7) Update the ratings in the ratings.log file
-        updateTrackRating(key, rating);
+        await updateTrackRating(key, rating);
 
         // Reload ratings to get the updated values for logging
         const updatedRatings = loadRatings();
-        console.log(
-            `[Rating Debug] ➤ Updated "${key}" → ` +
-            `avg=${updatedRatings[key].averageRating.toFixed(2)} ` +
-            `(${updatedRatings[key].ratingCount} ratings)`
-        );
+
+        // Check if the rating exists before accessing its properties
+        if (updatedRatings[key] && updatedRatings[key].averageRating !== undefined) {
+            console.log(
+                `[Rating Debug] ➤ Updated "${key}" → ` +
+                `avg=${updatedRatings[key].averageRating.toFixed(2)} ` +
+                `(${updatedRatings[key].ratingCount} ratings)`
+            );
+        } else {
+            console.log(`[Rating Debug] ➤ Updated "${key}" but rating data is not available yet`);
+        }
 
         // Mark this message as processed
         processedMessageIds.add(messageId);
@@ -691,7 +750,7 @@ async function pollForComments(videoId) {
 
     // 8) Save processed message IDs if we processed any new messages
     if (newMessagesProcessed) {
-        saveProcessedMessageIds();
+        await saveProcessedMessageIds();
     }
 
     // Only clear the window if we're at the end of the track
@@ -759,7 +818,7 @@ function readRatingFromMetadata(trackPath) {
  * @param {string} trackPath - Path to the track
  * @returns {number|null} - The average rating or null if not rated
  */
-function getRatingForTrack(trackPath) {
+async function getRatingForTrack(trackPath) {
     // If metadata integration is enabled, always try to get rating from MP3 metadata first
     if (STATION_CONFIG.metadataIntegration?.enabled) {
         // Try to get rating directly from MP3 metadata
@@ -771,7 +830,7 @@ function getRatingForTrack(trackPath) {
 
         // If fallbackToFile is enabled and metadata is not available, try ratings.log
         if (STATION_CONFIG.metadataIntegration?.fallbackToFile) {
-            const ratings = loadRatings();
+            const ratings = await loadRatings();
             const inMemoryRating = ratings[trackPath]?.averageRating;
 
             if (inMemoryRating !== undefined) {
@@ -783,7 +842,7 @@ function getRatingForTrack(trackPath) {
     }
 
     // If metadata integration is disabled, use ratings.log
-    const ratings = loadRatings();
+    const ratings = await loadRatings();
     return ratings[trackPath]?.averageRating || null;
 }
 
@@ -791,9 +850,9 @@ function getRatingForTrack(trackPath) {
  * Process feedback entries and update MP3 metadata
  * @param {string} trackPath - Path to the track
  * @param {Array} feedbackEntries - Feedback entries for the track
- * @returns {boolean} - Success status
+ * @returns {Promise<boolean>} - Promise that resolves to success status
  */
-function processFeedbackAndUpdateMetadata(trackPath, feedbackEntries) {
+async function processFeedbackAndUpdateMetadata(trackPath, feedbackEntries) {
     try {
         if (!feedbackEntries || feedbackEntries.length === 0) {
             console.warn(`[Rating Debug] No feedback entries to process for "${trackPath}"`);
@@ -855,7 +914,7 @@ function processFeedbackAndUpdateMetadata(trackPath, feedbackEntries) {
         }));
 
         // Perform sentiment analysis on the comments
-        const sentimentResult = sentimentAnalyzer.analyzeSentiment(feedbackComments);
+        const sentimentResult = await sentimentAnalyzer.analyzeSentiment(feedbackComments);
 
         // If there's an existing sentiment, include it in the analysis
         let sentimentSummary = sentimentResult.summary;
@@ -910,9 +969,9 @@ function processFeedbackAndUpdateMetadata(trackPath, feedbackEntries) {
  * Process ratings and update MP3 metadata (legacy method, kept for compatibility)
  * @param {string} trackPath - Path to the track
  * @param {Object} ratingsData - Ratings data for the track
- * @returns {boolean} - Success status
+ * @returns {Promise<boolean>} - Promise that resolves to success status
  */
-function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
+async function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
     try {
         // Convert ratings data to feedback entries format
         const feedbackEntries = ratingsData.ratings.map(rating => ({
@@ -924,7 +983,7 @@ function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
         }));
 
         // Use the new method to process feedback and update metadata
-        return processFeedbackAndUpdateMetadata(trackPath, feedbackEntries);
+        return await processFeedbackAndUpdateMetadata(trackPath, feedbackEntries);
     } catch (error) {
         console.error(`[Rating Debug] Error processing ratings for "${trackPath}":`, error);
         return false;
@@ -936,9 +995,9 @@ function processRatingsAndUpdateMetadata(trackPath, ratingsData) {
  * @param {string} trackPath - Path to the track
  * @returns {boolean} - Success status
  */
-function clearProcessedRatings(trackPath) {
+async function clearProcessedRatings(trackPath) {
     try {
-        const ratings = loadRatings();
+        const ratings = await loadRatings();
 
         if (!ratings[trackPath]) {
             console.warn(`[Rating Debug] No ratings found for "${trackPath}" to clear`);
@@ -958,7 +1017,7 @@ function clearProcessedRatings(trackPath) {
         };
 
         // Save the updated ratings
-        saveRatings(ratings);
+        await saveRatings(ratings);
 
         console.log(`[Rating Debug] Cleared processed ratings for "${trackPath}", keeping ${recentRatings.length} recent ratings`);
         return true;
@@ -974,6 +1033,20 @@ function clearProcessedRatings(trackPath) {
  */
 function getCurrentlyPlaying() {
     return currentlyPlaying;
+}
+
+/**
+ * Flush all buffered writes to disk
+ * This should be called before shutting down the application
+ * @returns {Promise<void>}
+ */
+async function flushAllBuffers() {
+    try {
+        await fileUtils.flushAllBuffers();
+        console.log('All buffered writes flushed to disk');
+    } catch (error) {
+        console.error('Error flushing buffers:', error);
+    }
 }
 
 module.exports = {
@@ -1000,5 +1073,6 @@ module.exports = {
     readFeedbackLog,
     appendToFeedbackLog,
     removeFromFeedbackLog,
+    flushAllBuffers,
     EMOJI_RATINGS,
 };

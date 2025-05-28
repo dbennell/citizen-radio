@@ -28,11 +28,11 @@ describe('Utils - YouTube API Functions', () => {
   beforeEach(() => {
     // Reset mocks before each test
     jest.clearAllMocks();
-    
+
     // Reset environment variables
     process.env = { ...originalEnv };
     process.env.YOUTUBE_API_KEY = 'test-api-key';
-    
+
     // Mock console methods to prevent noise in test output
     jest.spyOn(console, 'log').mockImplementation(() => {});
     jest.spyOn(console, 'error').mockImplementation(() => {});
@@ -48,9 +48,9 @@ describe('Utils - YouTube API Functions', () => {
     it('should return null if YouTube API key is not set', async () => {
       // Remove API key
       delete process.env.YOUTUBE_API_KEY;
-      
+
       const result = await utils.fetchLiveVideoId();
-      
+
       expect(result).toBeNull();
       expect(google.youtube).not.toHaveBeenCalled();
     });
@@ -69,11 +69,11 @@ describe('Utils - YouTube API Functions', () => {
           ]
         }
       };
-      
+
       google.youtube().liveBroadcasts.list.mockResolvedValue(mockResponse);
-      
+
       const result = await utils.fetchLiveVideoId();
-      
+
       expect(result).toBe('test-video-id');
       expect(google.youtube().liveBroadcasts.list).toHaveBeenCalledWith({
         part: 'id,snippet',
@@ -87,7 +87,7 @@ describe('Utils - YouTube API Functions', () => {
       google.youtube().liveBroadcasts.list.mockResolvedValue({
         data: { items: [] }
       });
-      
+
       // Mock search.list to return a recent stream
       const mockSearchResponse = {
         data: {
@@ -101,11 +101,11 @@ describe('Utils - YouTube API Functions', () => {
           ]
         }
       };
-      
+
       google.youtube().search.list.mockResolvedValue(mockSearchResponse);
-      
+
       const result = await utils.fetchLiveVideoId();
-      
+
       expect(result).toBe('recent-video-id');
       expect(google.youtube().search.list).toHaveBeenCalled();
     });
@@ -115,14 +115,14 @@ describe('Utils - YouTube API Functions', () => {
       google.youtube().liveBroadcasts.list.mockRejectedValue(
         new Error('Login Required')
       );
-      
+
       // Mock search.list to return no items
       google.youtube().search.list.mockResolvedValue({
         data: { items: [] }
       });
-      
+
       const result = await utils.fetchLiveVideoId();
-      
+
       expect(result).toBeNull();
       expect(google.youtube().search.list).toHaveBeenCalled();
     });
@@ -132,14 +132,14 @@ describe('Utils - YouTube API Functions', () => {
       google.youtube().liveBroadcasts.list.mockResolvedValue({
         data: { items: [] }
       });
-      
+
       // Mock search.list to throw an error
       google.youtube().search.list.mockRejectedValue(
         new Error('API Error')
       );
-      
+
       const result = await utils.fetchLiveVideoId();
-      
+
       expect(result).toBeNull();
     });
   });
@@ -148,16 +148,16 @@ describe('Utils - YouTube API Functions', () => {
     it('should return empty array if YouTube API key is not set', async () => {
       // Remove API key
       delete process.env.YOUTUBE_API_KEY;
-      
+
       const result = await utils.readLiveChat('test-video-id');
-      
+
       expect(result).toEqual([]);
       expect(google.youtube).not.toHaveBeenCalled();
     });
 
     it('should return empty array if no videoId is provided', async () => {
       const result = await utils.readLiveChat();
-      
+
       expect(result).toEqual([]);
       expect(google.youtube).not.toHaveBeenCalled();
     });
@@ -175,9 +175,9 @@ describe('Utils - YouTube API Functions', () => {
           ]
         }
       };
-      
+
       google.youtube().videos.list.mockResolvedValue(mockVideosResponse);
-      
+
       // Mock liveChatMessages.list to return messages
       const mockMessages = [
         {
@@ -199,26 +199,26 @@ describe('Utils - YouTube API Functions', () => {
           }
         }
       ];
-      
+
       const mockChatResponse = {
         data: {
           items: mockMessages
         }
       };
-      
+
       google.youtube().liveChatMessages.list.mockResolvedValue(mockChatResponse);
-      
+
       const result = await utils.readLiveChat('test-video-id');
-      
+
       expect(result).toEqual(mockMessages);
       expect(google.youtube().videos.list).toHaveBeenCalledWith({
         part: 'liveStreamingDetails',
         id: 'test-video-id'
       });
       expect(google.youtube().liveChatMessages.list).toHaveBeenCalledWith({
-        part: 'snippet,authorDetails',
+        part: 'snippet',
         liveChatId: 'test-chat-id',
-        maxResults: 200
+        maxResults: 50
       });
     });
 
@@ -233,11 +233,11 @@ describe('Utils - YouTube API Functions', () => {
           ]
         }
       };
-      
+
       google.youtube().videos.list.mockResolvedValue(mockVideosResponse);
-      
+
       const result = await utils.readLiveChat('test-video-id');
-      
+
       expect(result).toEqual([]);
       expect(google.youtube().liveChatMessages.list).not.toHaveBeenCalled();
     });
@@ -255,16 +255,16 @@ describe('Utils - YouTube API Functions', () => {
           ]
         }
       };
-      
+
       google.youtube().videos.list.mockResolvedValue(mockVideosResponse);
-      
+
       // Mock liveChatMessages.list to throw an error
       google.youtube().liveChatMessages.list.mockRejectedValue(
         new Error('API Error')
       );
-      
+
       const result = await utils.readLiveChat('test-video-id');
-      
+
       expect(result).toEqual([]);
     });
   });

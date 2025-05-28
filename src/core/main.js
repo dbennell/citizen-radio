@@ -119,7 +119,7 @@ function cleanTempDirectory(rootDir) {
                 const { fetchLiveVideoId } = require('../utils');
                 const videoId = await fetchLiveVideoId();
                 if (videoId) {
-                    console.log(`✅ Found video ID: ${videoId}`);
+                    //console.log(`✅ Found video ID: ${videoId}`);
                     STATION_CONFIG.youtube.videoId = videoId;
                 } else {
                     console.warn('⚠️ Could not find a live stream video ID. Please provide one manually.');

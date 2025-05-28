@@ -6,158 +6,24 @@
 
 const fs = require('fs');
 const path = require('path');
-const { createCanvas, loadImage } = require('canvas');
+const { createCanvas, loadImage, registerFont } = require('canvas');
 const { STATION_CONFIG } = require('../core/config');
 const { getRandomCoverImage } = require('../core/streamer');
 const { extractMetadata, fetchLastChatComments } = require('../utils');
-const emojiMap             = require('../utils/emojiMap');
-const emojiImageCache      = {};
 const {EMOJI_RATINGS} = require('./ratingsManager');
-const EMOJI_DIR = path.join(__dirname, '../../assets/emojis');
+
+// Register fonts
+const FONTS_DIR = path.join(__dirname, '../../assets/fonts');
+registerFont(path.join(FONTS_DIR, 'NotoColorEmoji-Regular.ttf'), { family: 'Noto Color Emoji' });
+registerFont(path.join(FONTS_DIR, 'TheConfessionRegular-YBpv.ttf'), { family: 'The Confession' });
 
 // Cache for track-specific comments
 let currentTrackComments = [];
 
 
-/**
- * Given an emoji character, return a loaded Image (or null).
- */
-async function loadEmojiImage(emojiChar) {
-    // fast cache‐hit
-    if (emojiImageCache[emojiChar]) return emojiImageCache[emojiChar];
-
-    console.log(`Debug: Looking up emoji character: "${emojiChar}" (Unicode: ${[...emojiChar].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')})`);
-
-    // Check for exact match first
-    let fullPath = emojiMap[emojiChar];
-
-    // If no exact match, try to find a close match
-    if (!fullPath) {
-        console.log(`No exact match for emoji "${emojiChar}" in emojiMap (${Object.keys(emojiMap).length} keys)`);
-
-        // Try to find a close match by comparing code points
-        const emojiCodePoints = [...emojiChar].map(c => c.codePointAt(0));
-        let bestMatch = null;
-        let bestMatchScore = 0;
-
-        for (const key of Object.keys(emojiMap)) {
-            const keyCodePoints = [...key].map(c => c.codePointAt(0));
-            // Check if any code points match
-            const matchingPoints = emojiCodePoints.filter(cp => keyCodePoints.includes(cp)).length;
-            if (matchingPoints > bestMatchScore) {
-                bestMatchScore = matchingPoints;
-                bestMatch = key;
-            }
-        }
-
-        if (bestMatch && bestMatchScore > 0) {
-            console.log(`Found potential match: "${bestMatch}" with score ${bestMatchScore}`);
-            fullPath = emojiMap[bestMatch];
-
-            // Cache this mapping for future lookups
-            emojiMap[emojiChar] = fullPath;
-            console.log(`Added mapping for "${emojiChar}" -> "${bestMatch}" (${fullPath})`);
-        } else {
-            // As a last resort, try to find a file with a name that might match
-            // Look for common emoji names based on the character
-            const commonNames = {
-                '👍': ['thumbs_up', '+1'],
-                '👎': ['thumbs_down', '-1'],
-                '❤️': ['heart', 'red_heart'],
-                '❤': ['heart', 'red_heart'],
-                '♥️': ['heart', 'red_heart'],
-                '♥': ['heart', 'red_heart'],
-                '😍': ['heart_eyes'],
-                '🥰': ['smiling_hearts', 'smiling_face_with_hearts'],
-                '🤩': ['star_struck', 'star_eyes'],
-                '🔇': ['mute', 'muted_speaker'],
-                '😡': ['angry', 'pouting_face'],
-                '🤬': ['angry_cursing', 'face_with_symbols_on_mouth'],
-                '🤡': ['clown', 'clown_face'],
-                '🫳': ['hand_palm_down', 'palm_down_hand']
-            };
-
-            const possibleNames = commonNames[emojiChar] || [];
-            if (possibleNames.length > 0) {
-                console.log(`Trying common names for "${emojiChar}": ${possibleNames.join(', ')}`);
-
-                // Check if any of these names exist in the assets directory
-                for (const name of possibleNames) {
-                    const possiblePath = path.join(EMOJI_DIR, `${name}.png`);
-                    if (fs.existsSync(possiblePath)) {
-                        fullPath = possiblePath;
-                        console.log(`Found file for common name "${name}": ${fullPath}`);
-
-                        // Cache this mapping for future lookups
-                        emojiMap[emojiChar] = fullPath;
-                        break;
-                    }
-                }
-            }
-
-            if (!fullPath) {
-                console.warn(`No PNG asset found for emoji "${emojiChar}" after all attempts`);
-
-                // Fallback to a default emoji or a similar one that exists
-                const fallbackEmojis = {
-                    '🔇': '😶', // No mouth emoji as fallback for mute
-                    '👍': '+1.png',
-                    '👎': '-1.png'
-                };
-
-                const fallbackPath = fallbackEmojis[emojiChar];
-                if (fallbackPath) {
-                    if (fallbackPath.endsWith('.png')) {
-                        // Direct path to a PNG file
-                        fullPath = path.join(EMOJI_DIR, fallbackPath);
-                        console.log(`Using fallback PNG file for "${emojiChar}": ${fullPath}`);
-                    } else {
-                        // Another emoji character, recursively try to load it
-                        console.log(`Using fallback emoji character for "${emojiChar}": "${fallbackPath}"`);
-                        return await loadEmojiImage(fallbackPath);
-                    }
-                } else {
-                    // If no specific fallback, try to use a generic emoji
-                    const genericPath = path.join(EMOJI_DIR, 'slightly_smiling_face.png');
-                    if (fs.existsSync(genericPath)) {
-                        fullPath = genericPath;
-                        console.log(`Using generic emoji for "${emojiChar}": ${fullPath}`);
-                    } else {
-                        return null;
-                    }
-                }
-            }
-        }
-    }
-
-    console.log(`Using path for emoji "${emojiChar}": ${fullPath}`);
-
-    try {
-        const img = await loadImage(fullPath);
-        emojiImageCache[emojiChar] = img;
-        return img;
-    } catch (err) {
-        console.error(`Failed loading ${fullPath}:`, err);
-
-        // Try to use a generic emoji as a last resort
-        try {
-            const genericPath = path.join(EMOJI_DIR, 'slightly_smiling_face.png');
-            if (fs.existsSync(genericPath)) {
-                console.log(`Using generic emoji after load failure for "${emojiChar}": ${genericPath}`);
-                const img = await loadImage(genericPath);
-                emojiImageCache[emojiChar] = img;
-                return img;
-            }
-        } catch (fallbackErr) {
-            console.error(`Failed loading fallback emoji:`, fallbackErr);
-        }
-
-        return null;
-    }
-}
 
 /**
- * Render text with emoji images
+ * Render text with emoji support using emoji image mapping
  * @param {CanvasRenderingContext2D} ctx - Canvas context
  * @param {string} text - Text to render
  * @param {number} x - X position
@@ -165,80 +31,98 @@ async function loadEmojiImage(emojiChar) {
  * @param {number} fontSize - Font size in pixels
  */
 async function renderTextWithEmojiImages(ctx, text, x, y, fontSize) {
-    let currentX = x;
-    const emojiSize = fontSize * 1.2; // Make emojis slightly larger than text
+    // Import the emoji map
+    const emojiMap = require('../utils/emojiMap');
 
-    // Save current font
+    // Save current font and style
     const originalFont = ctx.font;
+    const originalFillStyle = ctx.fillStyle;
 
-    // Process each character in the text
+    // First, preprocess the text to handle emojis surrounded by colons
+    // This will convert patterns like ":🖖:" to just "🖖" with proper spacing
+    text = text.replace(/:([\u{1F300}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]):/gu, " $1 ");
+
+    // Ensure proper spacing by normalizing spaces
+    text = text.replace(/\s+/g, " ").trim();
+
+    // Split text into chunks (emoji vs. regular text)
+    const chunks = [];
+    let currentChunk = '';
+    let currentType = 'text'; // 'text' or 'emoji'
+
     for (let i = 0; i < text.length; i++) {
         const char = text[i];
+        const isEmojiChar = /[\u{1F300}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}]/u.test(char);
 
-        // Check if this character is an emoji we know about
-        // Need to handle different Unicode representations of emojis
-        // But be more precise to avoid false positives with invisible characters
-
-        // First, check for exact match which is the most reliable
-        const isEmoji = Object.keys(EMOJI_RATINGS).includes(char);
-
-        if (isEmoji) {
-            // Use the exact matching emoji
-            const matchingEmoji = char;
-
-            // Log the detected emoji for debugging
-            console.log(`Rendering emoji: "${char}" (Unicode: ${[...char].map(c => `U+${c.codePointAt(0).toString(16).toUpperCase()}`).join(' ')})`);
-
-            // Try to load emoji image
-            const emojiImage = await loadEmojiImage(matchingEmoji);
-
-            if (emojiImage) {
-                // Draw emoji image
-                ctx.drawImage(
-                    emojiImage,
-                    currentX,
-                    y - emojiSize + (fontSize / 4), // Align with text baseline
-                    emojiSize,
-                    emojiSize
-                );
-                currentX += emojiSize;
-            } else {
-                // Fallback to text if image not available
-                // Use a font that supports colored emojis
-                ctx.font = `${fontSize}px "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif`;
-                ctx.fillText(char, currentX, y);
-                // Estimate width of emoji character (this is approximate)
-                currentX += ctx.measureText(char).width;
-                // Restore font for next characters
-                ctx.font = originalFont;
+        if (isEmojiChar && currentType !== 'emoji') {
+            // Switching from text to emoji
+            if (currentChunk) {
+                chunks.push({ type: currentType, text: currentChunk });
+                currentChunk = '';
             }
+            currentType = 'emoji';
+            currentChunk = char;
+        } else if (!isEmojiChar && currentType !== 'text') {
+            // Switching from emoji to text
+            if (currentChunk) {
+                chunks.push({ type: currentType, text: currentChunk });
+                currentChunk = '';
+            }
+            currentType = 'text';
+            currentChunk = char;
         } else {
-            // For regular text, measure a chunk until the next emoji or end
-            let textChunk = char;
-            let j = i + 1;
-            while (j < text.length) {
-                // Check if this character is an emoji using the same strict comparison as above
-                const isNextCharEmoji = Object.keys(EMOJI_RATINGS).includes(text[j]);
-
-                if (isNextCharEmoji) {
-                    break;
-                }
-
-                textChunk += text[j];
-                j++;
-            }
-
-            // Draw the text chunk
-            ctx.fillText(textChunk, currentX, y);
-            currentX += ctx.measureText(textChunk).width;
-
-            // Skip ahead since we've processed these characters
-            i = j - 1;
+            // Continuing current chunk
+            currentChunk += char;
         }
     }
 
-    // Restore original font
+    // Add the last chunk
+    if (currentChunk) {
+        chunks.push({ type: currentType, text: currentChunk });
+    }
+
+    // Render each chunk
+    let currentX = x;
+    for (const chunk of chunks) {
+        if (chunk.type === 'emoji') {
+            // For each emoji character, check if we have a matching PNG
+            for (const emojiChar of chunk.text) {
+                if (emojiMap[emojiChar]) {
+                    // We have a PNG for this emoji, load and draw it
+                    try {
+                        const img = await loadImage(emojiMap[emojiChar]);
+                        const emojiSize = fontSize * 1.2; // Make emoji slightly larger than text
+                        ctx.drawImage(img, currentX, y - emojiSize, emojiSize, emojiSize);
+                        currentX += emojiSize;
+                    } catch (err) {
+                        console.error(`Error loading emoji image for ${emojiChar}:`, err);
+                        // Fallback to text rendering if image loading fails
+                        ctx.font = originalFont;
+                        ctx.fillText(emojiChar, currentX, y);
+                        currentX += ctx.measureText(emojiChar).width;
+                    }
+                } else {
+                    // No PNG for this emoji, render as text
+                    ctx.font = originalFont;
+                    ctx.fillText(emojiChar, currentX, y);
+                    currentX += ctx.measureText(emojiChar).width;
+                }
+            }
+            // Add a little extra space after emojis
+            currentX += fontSize * 0.2;
+        } else {
+            // Render regular text with canvas
+            ctx.font = originalFont;
+            ctx.fillText(chunk.text, currentX, y);
+
+            // Advance position
+            currentX += ctx.measureText(chunk.text).width;
+        }
+    }
+
+    // Restore original styles
     ctx.font = originalFont;
+    ctx.fillStyle = originalFillStyle;
 }
 
 /**
@@ -249,7 +133,7 @@ async function renderTextWithEmojiImages(ctx, text, x, y, fontSize) {
  * @returns {Promise<void>} - Promise that resolves when the overlay is updated
  */
 async function updateOverlay(trackPath, videoId, clearComments = false) {
-    const meta = extractMetadata(trackPath);
+    const meta = extractMetadata(trackPath) || {};
     const { title = 'Unknown Title', artist = 'Unknown Artist', rating = 0, picture } = meta;
 
     // Pick cover buffer
@@ -260,40 +144,45 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
     // Clear comments cache if requested or if this is a new track
     if (clearComments) {
         currentTrackComments = [];
-        console.log(`🗨️ Cleared comment cache for overlay`);
+        //console.log(`🗨️ Cleared comment cache for overlay`);
     }
 
     // Grab chat comments…
     let comments = [];
     if (!clearComments) {
-        try { 
+        try {
             // Fetch new comments
             const newComments = await fetchLastChatComments(videoId, 10);
 
-            // Add new comments to our track-specific cache if they're not already there
-            for (const comment of newComments) {
-                // Check if this comment is already in our cache (by text and author)
-                const isDuplicate = currentTrackComments.some(
-                    c => c.text === comment.text && c.author === comment.author
-                );
+            // Check if newComments is an array and has entries
+            if (Array.isArray(newComments) && newComments.length > 0) {
+                // Add new comments to our track-specific cache if they're not already there
+                for (const comment of newComments) {
+                    // Check if this comment is already in our cache (by text and author)
+                    const isDuplicate = currentTrackComments.some(
+                        c => c.text === comment.text && c.author === comment.author
+                    );
 
-                if (!isDuplicate) {
-                    currentTrackComments.push(comment);
+                    if (!isDuplicate) {
+                        currentTrackComments.push(comment);
+                    }
                 }
-            }
 
-            // Limit the cache to the most recent 10 comments
-            if (currentTrackComments.length > 10) {
-                currentTrackComments = currentTrackComments.slice(currentTrackComments.length - 10);
-            }
+                // Limit the cache to the most recent 10 comments
+                if (currentTrackComments.length > 10) {
+                    currentTrackComments = currentTrackComments.slice(currentTrackComments.length - 10);
+                }
 
-            comments = [...currentTrackComments];
+                comments = [...currentTrackComments];
 
-            console.log(`🗨️ Fetched ${newComments.length} comments, cache now has ${comments.length} comments`);
-            if (comments.length > 0) {
-                console.log(`🗨️ First comment: "${comments[0].text}" by ${comments[0].author}`);
+                console.log(`🗨️ Fetched ${newComments.length} comments, cache now has ${comments.length} comments`);
+                if (comments.length > 0) {
+                    console.log(`🗨️ First comment: "${comments[0].text}" by ${comments[0].author}`);
+                } else {
+                    console.log(`🗨️ No comments to display in overlay`);
+                }
             } else {
-                console.log(`🗨️ No comments to display in overlay`);
+                console.log('🗨️ No new comments fetched or no comment data available.');
             }
         } catch (err) {
             console.error('Error fetching comments for overlay:', err);
@@ -366,10 +255,11 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
     }
 
     ctx.textAlign = 'left';
-
-    // Artist on the second line
-    ctx.font = '28px sans-serif';
-    ctx.fillText(artist, 40, H - bandH + 80);
+    if (artist != null) {
+        // Artist on the second line if there is one
+        ctx.font = '28px sans-serif';
+        ctx.fillText(artist, 40, H - bandH + 80);
+    }
 
     // Only draw the comment box if we should show it
     if (showCommentBox) {
@@ -416,11 +306,11 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
             ctx.fillStyle = '#FFF';
             ctx.fillText(authorText, boxX + padding, y1);
 
-            // Set font for comment text on second line
-            ctx.font = '16px sans-serif';
+            // Set font for comment text on second line - include emoji fonts
+            ctx.font = '16px "Segoe UI Emoji", "Noto Color Emoji", "Apple Color Emoji", sans-serif';
 
-            // Render the comment text with emoji images on second line
-            // Remove any invisible characters and mute emoji from the text
+            // Render the comment text with emoji support on second line
+            // Remove any invisible characters from the text
             let commentText = comment.text;
 
             // Log the raw text for debugging
@@ -432,6 +322,16 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
             // Log the cleaned text for debugging
             if (commentText !== comment.text) {
                 console.log(`Cleaned comment text: "${commentText}" (Length: ${commentText.length})`);
+            }
+
+            // Separate emojis from the main message for better visual clarity
+            // If the message starts with emojis followed by text, add extra spacing
+            const emojiPrefix = commentText.match(/^([\u{1F300}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}\u{1F900}-\u{1F9FF}\u{1F1E0}-\u{1F1FF}](\s*:)?)+/u);
+            if (emojiPrefix && emojiPrefix[0].length < commentText.length) {
+                // Add extra spacing between emoji prefix and the rest of the message
+                const prefix = emojiPrefix[0];
+                const rest = commentText.substring(prefix.length).trim();
+                commentText = prefix + "   " + rest;
             }
 
             // Draw the comment text on the second line
@@ -483,5 +383,5 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
 }
 
 module.exports = {
-    updateOverlay,
+    updateOverlay
 };

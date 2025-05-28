@@ -1,36 +1,40 @@
 # Citizen Radio Project
+
 ## Overview
 Citizen Radio is an automated radio station and podcast generator that creates immersive, in-universe audio content for the Star Citizen game universe. It streams continuous music, AI-generated talk segments, advertisements, and podcasts to YouTube while simulating a fictional radio station (Radio Arc-Corp) broadcasting from within the game world.
+
 ## Key Features
-- : Automatically streams radio content with synchronized cover art rotation **24/7 YouTube Live Streaming**
+- **24/7 YouTube Live Streaming**: Automatically streams radio content with synchronized cover art rotation
 - **Dynamic Content Scheduling**: Intelligently schedules music, DJ segments, ads, and podcasts in customizable patterns
-- : Uses OpenAI's GPT-4 to create realistic radio content including:
+- **AI-Powered Script Generation**: Uses OpenAI's GPT-4 to create realistic radio content including:
     - DJ talk segments with personality and game-world references
     - In-universe advertisements for fictional products
     - Station IDs and transitions
     - Full-length podcast episodes with hosts and guests discussing topics from the Star Citizen universe
-
-**AI-Powered Script Generation**
-- **Smart Track Selection**: Prevents repetition with weighted history tracking for all content types
-- : Converts AI-generated scripts to audio using Google Cloud's Text-to-Speech API **Text-to-Speech Synthesis**
+- **Smart Track Selection**: Uses procedural mood/energy waves, ratings, play frequency, and listener requests to intelligently select content
+- **Text-to-Speech Synthesis**: Converts AI-generated scripts to audio using Google Cloud's Text-to-Speech API
 - **Voice Assignment System**: Assigns appropriate voices to different characters based on gender, role, and persistence across episodes
 - **AI Image Generation**: Creates station artwork for stream visualization using OpenAI's image API
+- **User Ratings & Engagement**: Collects ratings and comments from live chat, displays them in the stream, and enables DJs to reference feedback
+- **Analytics & Recommendations**: Processes user feedback to generate insights, trends, and content recommendations
 
 ## Technical Architecture
 The system is built with a modular design consisting of several key components:
-- : Main playback loop that controls content rotation and scheduling **orchestrator.js**
-- : Watches for new prompts and triggers appropriate content generation **promptProcessor.js**
-- : Builds complete podcast episodes from user prompts **podcastGenerator.js**
-- : Smart selection system for avoiding content repetition **trackManager.js**
-- : Handles FFmpeg pipelines for audio/video streaming **streamer.js**
-- : Assigns and persists voice profiles for characters **voiceManager.js**
-- : Converts text to speech and processes audio files **audioSynthesizer.js**
-- : Collects and manages user ratings for tracks **ratingsManager.js**
-- : Processes ratings data to generate insights and trends **analyticsEngine.js**
-- : Provides actionable content recommendations based on analytics **recommendationSystem.js**
-- : Manages per-track feedback, ratings, and sentiment analysis **ratingsManager.js**
-- : Analyzes comment sentiment to generate human-readable summaries **sentimentAnalyzer.js**
-- : Monitors chat for noteworthy comments to reference in segways **engagementMonitor.js**
+
+- **orchestrator.js**: Main playback loop that controls content rotation and scheduling
+- **promptProcessor.js**: Watches for new prompts and triggers appropriate content generation
+- **podcastGenerator.js**: Builds complete podcast episodes from user prompts
+- **trackManager.js**: Smart selection system for avoiding content repetition
+- **streamer.js**: Handles FFmpeg pipelines for audio/video streaming
+- **voiceManager.js**: Assigns and persists voice profiles for characters
+- **audioSynthesizer.js**: Converts text to speech and processes audio files
+- **ratingsManager.js**: Collects and manages user ratings for tracks
+- **analyticsEngine.js**: Processes ratings data to generate insights and trends
+- **recommendationSystem.js**: Provides actionable content recommendations based on analytics
+- **moodEnergyManager.js**: Manages procedural mood/energy waves for track selection
+- **requestManager.js**: Handles track requests with priority management
+- **sentimentAnalyzer.js**: Analyzes comment sentiment to generate human-readable summaries
+- **engagementMonitor.js**: Monitors chat for noteworthy comments to reference in segways
 
 ## How It Works
 1. **Station Configuration**: Defines station identity, DJ personality, scheduling patterns, and voice profiles
@@ -56,7 +60,7 @@ The system is built with a modular design consisting of several key components:
 - **Music Tracks**: Plays music files from the ready/music directory
 - **DJ Segments**: AI-generated casual DJ talk with station identification and personality
 - **Advertisements**: Fictional in-universe product ads
-- : Brief station identification clips **Station IDs & Intros**
+- **Station IDs & Intros**: Brief station identification clips
 - **Segways**: Smooth transitions between content types
 - **Podcasts**: Longer-form talk segments with multiple characters discussing in-universe topics
 - **Images**: Artwork displayed on the stream, rotated periodically
@@ -66,12 +70,13 @@ The system is built with a modular design consisting of several key components:
 - **Recommendation System**: Provides actionable content recommendations based on analytics
 - **MP3 Metadata Integration**: Stores ratings and sentiment in MP3 file metadata
 - **Enhanced Engagement**: Acknowledges listener feedback during broadcasts
+- **Mood/Energy Waves**: Procedural waves that influence track selection for dynamic listening experience
 
 ## Technologies Used
-- : Core application runtime environment **Node.js**
+- **Node.js**: Core application runtime environment
 - **FFmpeg**: Audio processing and live streaming
 - **OpenAI API**: Content generation (text and images)
-- : Voice synthesis **Google Cloud Text-to-Speech**
+- **Google Cloud Text-to-Speech**: Voice synthesis
 - **YouTube Live Streaming API**: Broadcast destination
 - **Chokidar**: File system watching for prompt detection
 
@@ -250,27 +255,27 @@ citizen-radio/
 
 #### Content Settings
 - `context`: Contextual information for AI to understand the setting
-- : Description of your station's personality and style `vibe`
+- `vibe`: Description of your station's personality and style
 - `segwayFunny`: Probability (0-1) of generating humorous transitions
-- : Whether to include podcasts in the rotation alongside dj talk segments `djOptions.includePodcasts`
+- `djOptions.includePodcasts`: Whether to include podcasts in the rotation alongside dj talk segments
 
 #### Track History
-- : How many recently played tracks to remember `trackHistory.historySize`
-- : Relative weights for different content types used in segways `trackHistory.weights`
+- `trackHistory.historySize`: How many recently played tracks to remember
+- `trackHistory.weights`: Relative weights for different content types used in segways
 
 #### Voice Settings
 - `ttsProfiles`: Voice assignments for different content types
 - `ttsAllowedPatterns`: Patterns for allowed voices
 
 #### AI Prompts
-- : Prompt for DJ segments `aiPrompts.dj`
-- : Prompt for advertisements `aiPrompts.ad`
-- : Prompt for station IDs/intros `aiPrompts.intro`
-- : Prompt for transitions between content `aiPrompts.segway`
-- : Prompt for humorous transitions `aiPrompts.segwayFunny`
+- `aiPrompts.dj`: Prompt for DJ segments
+- `aiPrompts.ad`: Prompt for advertisements
+- `aiPrompts.intro`: Prompt for station IDs/intros
+- `aiPrompts.segway`: Prompt for transitions between content
+- `aiPrompts.segwayFunny`: Prompt for humorous transitions
 
 #### Scheduling
-- : Array defining the content rotation pattern `schedule.defaultPattern`
+- `schedule.defaultPattern`: Array defining the content rotation pattern
 
 #### Rating System
 - `ratingSystem.enabled`: Enable or disable the rating system
@@ -304,14 +309,14 @@ If no video ID is provided, the system will attempt to automatically find the mo
 ### Adding Text Prompts
 The system automatically monitors the directories for new text files to process: `data/prompts/`
 1. **Create a Text Prompt File**:
-    - Create a file in the appropriate prompt folder:
-        - - For DJ talk segments `data/prompts/dj/`
-        - - For advertisements `data/prompts/ads/`
-        - - For station IDs and transitions `data/prompts/intros/`
-        - - For podcast episodes `data/prompts/podcast/`
-        - - For generating station artwork `data/prompts/images/`
+   - Create a file in the appropriate prompt folder:
+       - `data/prompts/dj/` - For DJ talk segments
+       - `data/prompts/ads/` - For advertisements
+       - `data/prompts/intros/` - For station IDs and transitions
+       - `data/prompts/podcast/` - For podcast episodes
+       - `data/prompts/images/` - For generating station artwork
 
-`.txt`
+   Use the `.txt` extension for all prompt files.
 
 2. **Format Your Prompt**:
     - For simple content (dj, ads, intros): Write a brief description or outline
@@ -372,7 +377,7 @@ The system automatically:
 - Creates consistent voice assignments so characters sound the same across episodes
 - Generates natural conversation between all participants
 
-For more control, create a file with the same base name as your prompt to customize parameters like episode length, style, and other settings. `.cfg.json`
+For more control, create a file with the same base name as your prompt and a `.cfg.json` extension to customize parameters like episode length, style, and other settings.
 ## Testing
 The project includes a comprehensive testing infrastructure with different types of tests:
 

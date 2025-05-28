@@ -1,310 +1,75 @@
 // ========================
-// File: promptProcessor.js
+// File: segwayManager.js
 // ========================
-require("dotenv").config();
 const fs = require('fs');
 const path = require('path');
-const {
-    extractParticipantInfo,
-    processParticipantData
-} = require('./podcastParser');
-
-const podcastGenerator = require('./podcastGenerator');
-
-const glob = require("glob");
-const chokidar = require("chokidar");
-const OpenAI = require("openai");
-const textToSpeech = require("@google-cloud/text-to-speech");
-const tracksManager  = require("../managers/trackManager");
-const ratingManager = require('../managers/ratingsManager');
-const engagementMonitor = require('../managers/engagementMonitor');
-const { generateTTS } = require('../utils/ttsHelper'); // Use the same helper
+const { promisify } = require('util');
+const { getLastPlays } = require('./playLogManager');
+const { STATION_CONFIG, READY_DIR } = require('../core/config');
+const ratingManager = require('./ratingsManager');
+const engagementMonitor = require('./engagementMonitor');
+const openai = require('openai');
+const { generateTTS } = require('../utils/ttsHelper');
 
 
-const { PROMPT_DIRS, READY_DIR, STATION_CONFIG } = require("../core/config");
+const readFileAsync = promisify(fs.readFile);
+const unlinkAsync = promisify(fs.unlink);
+const SEGWAY_DIR = READY_DIR('segway');
+const PLAY_LOG = path.join(__dirname, '../../data/play.log');
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const ttsClient = new textToSpeech.TextToSpeechClient();
-const TEMP_ROOT = path.join(__dirname, 'temp'); // Root directory for temp files
-
-function getTempDirectory(type, baseName = '') {
-    return path.join(TEMP_ROOT, type, baseName);
-}
-
-// Create unified temp directory structure
-function createDirectories() {
-    const dirs = ['podcast', 'segway', 'dj', 'ad', 'intro', 'clips']; // Extendable
-    dirs.forEach(dir => fs.mkdirSync(path.join(TEMP_ROOT, dir), { recursive: true }));
-    const readyDirs = [...Object.keys(PROMPT_DIRS), 'segway'];
-    readyDirs.forEach(type => fs.mkdirSync(READY_DIR(type), { recursive: true }));
-}
-
-// function createDirectories() {
-//     const allTypes = [...Object.keys(PROMPT_DIRS), "segway"];
-//     allTypes.forEach(type => fs.mkdirSync(READY_DIR(type), { recursive: true }));
-//     fs.mkdirSync("ready", { recursive: true });
-// }
-
-function initPromptWatcher() {
-    for (const [type, dir] of Object.entries(PROMPT_DIRS)) {
-        chokidar.watch(dir, {
-            ignoreInitial: false,
-            ignored: ["**/*.processed", "**/*.elaborated.txt", "**/*.cfg.json"], // Add *.cfg.json to ignored files
-        }).on("add", filePath => {
-            if (!filePath.includes(".elaborated") && !filePath.includes(".processed") && !filePath.endsWith(".cfg.json")) {
-                processPromptFile(type, filePath);
-            }
-        });
-    }
-}
-
-function validateParticipants(participantData, hostNames, guestNames) {
-    if (!participantData || typeof participantData !== 'object') {
-        throw new Error('Invalid participantData object');
-    }
-
-    if (!Array.isArray(hostNames) || !Array.isArray(guestNames)) {
-        throw new Error('HostNames and GuestNames should be arrays');
-    }
-
-    if (Object.keys(participantData).length === 0) {
-        throw new Error('No participant data found');
-    }
-
-    hostNames.forEach(name => {
-        if (!participantData[name]) {
-            throw new Error(`Host "${name}" is missing from participantData`);
-        }
-    });
-
-    guestNames.forEach(name => {
-        if (!participantData[name]) {
-            throw new Error(`Guest "${name}" is missing from participantData`);
-        }
-    });
-}
-
-async function processPromptFile(type, filePath) {
-    const baseName = path.basename(filePath, ".txt"); // Get the base name of the file
-    const tempDir = getTempDirectory(type, baseName); // Temp directory for processed files
-    const promptFileInTemp = path.join(tempDir, `${baseName}.txt`); // Destination for prompt file in temp
-    const elaboratedFile = path.join(tempDir, `${baseName}.elaborated.txt`);
-    const configFile = path.join(tempDir, `${baseName}.cfg.json`);
-    const outputExt = type === "image" ? "png" : "mp3";
-    const outputFile = path.join(READY_DIR(type), `${baseName}.${outputExt}`);
-    const archiveDir = path.join(__dirname, "archive", type); // Optional archive directory for processed prompts
-
-    let elaboratedText;
-
+/**
+ * Get the track context for segway generation by referencing play.log and the queue.
+ *
+ * @param {Array} playbackQueue - Current playback queue.
+ * @returns {Object} - Context with lastTrack and nextTrack, or null for errors.
+ */
+async function getTrackContext(playbackQueue) {
     try {
-        // Ensure temp and archive directories exist
-        fs.mkdirSync(tempDir, { recursive: true });
-        fs.mkdirSync(archiveDir, { recursive: true }); // Optional archive directory
+        // Get last track from play.log
+        const logData = await readFileAsync(PLAY_LOG, 'utf-8');
+        const playHistory = logData.trim().split('\n');
 
-        // Move the prompt file into the temp directory
-        if (!fs.existsSync(promptFileInTemp)) {
-            fs.renameSync(filePath, promptFileInTemp); // Move prompt file into the temp folder
-            console.log(`✔ Moved prompt file to temp: ${promptFileInTemp}`);
+        // Filter out segways from play history
+        const filteredHistory = playHistory
+            .map(line => JSON.parse(line))
+            .filter(entry => entry.type !== 'segway')
+            .map(entry => ({
+                type: entry.type,
+                meta: entry.meta,
+                relPath: entry.relPath
+            }));
+
+        const lastPlayed = filteredHistory.length > 0 ? filteredHistory[filteredHistory.length - 1] : null;
+
+        // Get next track from the playback queue
+        const nextTrack = playbackQueue.length > 0 ? playbackQueue[0] : null;
+
+        if (lastPlayed && nextTrack) {
+            return {
+                lastTrack: lastPlayed,
+                nextTrack: nextTrack,
+                prevTracks: filteredHistory.slice(-3), // Get up to 3 previous tracks
+                nextTracks: playbackQueue.slice(0, 3)  // Get up to 3 upcoming tracks
+            };
         }
 
-        // Read the prompt content
-        const promptContent = fs.readFileSync(promptFileInTemp, "utf-8").trim();
-        if (!promptContent) {
-            console.warn(`⚠ No content found in the prompt file: ${promptFileInTemp}`);
-            return;
-        }
-
-        // Handle processing...
-        if (type !== "podcast") {
-            if (fs.existsSync(elaboratedFile)) {
-                elaboratedText = fs.readFileSync(elaboratedFile, "utf-8").trim();
-            } else {
-                elaboratedText = await expandPromptWithContext(promptContent, type);
-                fs.writeFileSync(elaboratedFile, elaboratedText, "utf-8");
-                console.log(`✔ Created elaborated file: ${elaboratedFile}`);
-            }
-        } else {
-            elaboratedText = promptContent; // For podcasts, use the original content directly
-        }
-
-        // Handle specific types (e.g., image, dj, podcast)
-        if (type === "image") {
-            if (!fs.existsSync(outputFile)) {
-                await generateImage(elaboratedText, outputFile);
-            }
-        } else if (["dj", "ad", "intro", "segway"].includes(type)) {
-            if (!fs.existsSync(outputFile)) {
-                await generateTTS(elaboratedText, outputFile, {
-                    title: baseName,
-                    artist: STATION_CONFIG.djName,
-                    lyrics: elaboratedText,
-                }, type);
-            }
-        } else if (type === "podcast") {
-            if (!fs.existsSync(outputFile)) {
-                console.log(`🫛 Generating podcast → ${outputFile}`);
-
-                const extractedInfo = await extractParticipantInfo(promptContent) || {
-                    participantData: {},
-                    hostNames: [],
-                    guestNames: [],
-                    topic: "",
-                    durationMinutes: 6
-                };
-
-                const { participantData, hostNames, guestNames, topic, durationMinutes } = extractedInfo;
-
-                try {
-                    // Validate extracted participant data
-                    validateParticipants(participantData, hostNames, guestNames);
-                    console.log("Validated participant data:", participantData);
-                } catch (err) {
-                    console.error("❗ Participant validation failed:", err.message);
-                    return; // Abort processing if validation fails
-                }
-
-                console.log("Extracted participantData:", participantData);
-                console.log("Hosts:", hostNames);
-                console.log("Guests:", guestNames);
-                console.log("Topic:", topic);
-                console.log("Duration:", durationMinutes, "minutes");
-
-                await processParticipantData(participantData);
-
-                let podcastConfig = {
-                    prompt: promptContent,
-                    topic,
-                    durationMinutes,
-                    hostNames,
-                    guestNames,
-                    participantData,
-                    outputFileName: outputFile,
-                    tempDirectory: tempDir,
-                };
-
-                if (fs.existsSync(configFile)) {
-                    const customConfig = JSON.parse(fs.readFileSync(configFile, "utf-8"));
-                    podcastConfig = {
-                        ...customConfig,
-                        prompt: promptContent,
-                        outputFileName: outputFile,
-                        tempDirectory: tempDir,
-                        participantData,
-                    };
-                }
-
-                const result = await podcastGenerator.run(podcastConfig);
-
-                if (!result.success) {
-                    console.error(`Podcast generation failed: ${result.error}`);
-                } else {
-                    console.log(`✅ Podcast saved → ${outputFile}`);
-                }
-            }
-        }
+        console.warn(`SegwayManager: Missing context. Last Played: ${lastPlayed ? lastPlayed.meta.title : 'none'}, Next Track: ${nextTrack ? nextTrack.meta.title : 'none'}`);
+        return null;
     } catch (err) {
-        console.error(`❗ Error processing ${type} (${filePath}):`, err);
-    } finally {
-        try {
-            // Move the processed prompt file to an archive or delete it
-            if (!STATION_CONFIG.debug) {
-                console.log(`🧹 Removing processed prompt file: ${promptFileInTemp}`);
-                if (fs.existsSync(filePath)) fs.unlinkSync(filePath); // Optionally remove the original file
-            } else {
-                // Optionally archive the processed file
-                const archivePath = path.join(archiveDir, `${baseName}.txt`);
-                fs.renameSync(promptFileInTemp, archivePath);
-                console.log(`✔ Moved processed prompt to archive: ${archivePath}`);
-            }
-        } catch (cleanupErr) {
-            console.error(`❗ Failed to cleanup prompt file (${filePath}):`, cleanupErr.message);
-        }
+        console.error(`SegwayManager: Failed to retrieve track context -> ${err.message}`);
+        return null;
     }
 }
 
-function cleanTempDirectory(rootDir) {
-    console.log(`🧹 Cleaning up all temporary files in: ${rootDir}`);
-    fs.rmSync(rootDir, { recursive: true, force: true });
-    console.log(`✅ Temp directory cleaned: ${rootDir}`);
-}
-
-
-async function expandPromptWithContext(textPrompt, type) {
-    const context = `${STATION_CONFIG.context}. The station, '${STATION_CONFIG.stationName}', has the vibe of "${STATION_CONFIG.vibe}". DJ Name: '${STATION_CONFIG.djName}'.`;
-    const personality = STATION_CONFIG.aiPrompts[type] || "";
-    const userPrompt = `Base Prompt (Type: ${type}): "${textPrompt}"
-
-Personality:
-${personality}`;
-
-    const response = await openai.chat.completions.create({
-        model: "gpt-4.1-mini",
-        messages: [
-            { role: "system", content: context },
-            { role: "user", content: userPrompt }
-        ],
-        max_tokens: 2000
-    });
-    return response.choices[0].message.content.trim();
-}
-
-async function generateImage(prompt, outputPath) {
-    const response = await openai.images.generate({ prompt, model: "gpt-image-1", size: "1536x1024" });
-    const imageBytes = Buffer.from(response.data[0].b64_json, "base64");
-    fs.writeFileSync(outputPath, imageBytes);
-    console.log(`Image saved: ${outputPath}`);
-}
-
-// async function generateTTS(text, outputPath, metadata, type) {
-//     const voice = STATION_CONFIG.ttsProfiles[type] || "en-US-Wavenet-D";
-//
-//     // Determine language code from voice name
-//     let languageCode = "en-US";  // default
-//
-//     // Extract language code from voice name if possible
-//     if (voice && voice.includes('-')) {
-//         const parts = voice.split('-');
-//         if (parts.length >= 2) {
-//             const prefix = parts.slice(0, 2).join('-');
-//             if (prefix.match(/^[a-z]{2}-[A-Z]{2}$/)) {
-//                 languageCode = prefix;
-//                // console.log(`Using detected language code ${languageCode} for voice ${voice}`);
-//             }
-//         }
-//     }
-//
-//     const request = {
-//         input: { text: text + ' ... ' },
-//         voice: { languageCode: languageCode, name: voice },
-//         audioConfig: { audioEncoding: "MP3", speakingRate: 1.0 }
-//     };
-//
-//     try {
-//         const [response] = await ttsClient.synthesizeSpeech(request);
-//         fs.writeFileSync(outputPath, response.audioContent, "binary");
-//         //console.log(`TTS audio saved: ${outputPath}`);
-//     } catch (err) {
-//         console.error(`Error synthesizing speech with ${voice}:`, err.message);
-//
-//         // Try fallback with a standard voice
-//         console.log("Trying fallback voice...");
-//         const fallbackRequest = {
-//             input: { text: text + ' ... ' },
-//             voice: { languageCode: "en-US", name: "en-US-Chirp3-HD-Enceladus" },
-//             audioConfig: { audioEncoding: "MP3", speakingRate: 1.0 }
-//         };
-//
-//         const [fallbackResponse] = await ttsClient.synthesizeSpeech(fallbackRequest);
-//         fs.writeFileSync(outputPath, fallbackResponse.audioContent, "binary");
-//         console.log(`TTS audio saved with fallback voice: ${outputPath}`);
-//     }
-// }
-
-
-// Segway functionality has been moved to segwayManager.js
-// The following functions have been removed:
-// - generateSegway
-// - prepareSegway
+/**
+ * Generate a segway between two tracks using OpenAI.
+ *
+ * @param {Object} prevMeta - Metadata for the previous track.
+ * @param {Object} nextMeta - Metadata for the next track.
+ * @param {Array} prevTracks - Optional array of previous tracks (0-3 tracks)
+ * @param {Array} nextTracks - Optional array of upcoming tracks (0-3 tracks)
+ * @returns {Promise<string>} - The generated segway text.
+ */
 async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = []) {
     try {
         // Normalize metadata
@@ -312,7 +77,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         const prevType = prevMeta?.type || "unknown";
         const nextTitle = nextMeta?.title || (nextMeta?.filename ? nextMeta.filename.replace(/\.[^/.]+$/, "") : "upcoming content");
         const nextType = nextMeta?.type || "upcoming content";
-        const includeFunny = Math.random() < (STATION_CONFIG.segwayFunny || 0);
+        const includeFunny = Math.random() < (STATION_CONFIG?.segwayFunny ?? 0);
 
         // Process previous tracks array
         let prevTracksInfo = [];
@@ -335,7 +100,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                         const rating = ratingManager.getRatingForTrack(track.meta.relPath);
                         if (rating) {
                             trackInfo.rating = rating;
-                            trackInfo.ratingInfo = `This track has a listener rating of ${rating.toFixed(1)}/5.`;
+                            trackInfo.ratingInfo = `This track has a listener rating of ${typeof rating === 'number' ? rating.toFixed(1) : rating}/5.`;
                         }
                     }
 
@@ -364,10 +129,10 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                         const rating = ratingManager.getRatingForTrack(track.meta.relPath);
                         if (rating) {
                             trackInfo.rating = rating;
-                            trackInfo.ratingInfo = `This track has a listener rating of ${rating.toFixed(1)}/5.`;
+                            trackInfo.ratingInfo = `This track has a listener rating of ${typeof rating === 'number' ? rating.toFixed(1) : rating}/5.`;
 
                             // For highly rated tracks, add special note
-                            if (rating >= 4.5) {
+                            if (typeof rating === 'number' && rating >= 4.5) {
                                 trackInfo.ratingInfo += " It's a fan favorite!";
                             }
                         }
@@ -385,23 +150,22 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             if (prevMeta.type === 'music' && prevMeta.relPath) {
                 const rating = ratingManager.getRatingForTrack(prevMeta.relPath);
                 if (rating) {
-                    prevRatingInfo = `This track has a listener rating of ${rating.toFixed(1)}/5.`;
+                    prevRatingInfo = `This track has a listener rating of ${typeof rating === 'number' ? rating.toFixed(1) : rating}/5.`;
                 }
             }
 
             if (nextMeta.type === 'music' && nextMeta.relPath) {
                 const rating = ratingManager.getRatingForTrack(nextMeta.relPath);
                 if (rating) {
-                    nextRatingInfo = `The upcoming track has a listener rating of ${rating.toFixed(1)}/5.`;
+                    nextRatingInfo = `The upcoming track has a listener rating of ${typeof rating === 'number' ? rating.toFixed(1) : rating}/5.`;
 
                     // For highly rated tracks, suggest special introduction
-                    if (rating >= 4.5) {
+                    if (typeof rating === 'number' && rating >= 4.5) {
                         nextRatingInfo += " It's a fan favorite, so consider giving it a special introduction!";
                     }
                 }
             }
         }
-
 
         // 1) No previous track at all?  →  simple intro
         if (prevType === 'start' || prevTitle === '') {
@@ -427,7 +191,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         // For transitions from advertisements
         if (prevType === 'ad') {
             const fromAdTransitions = [
-                `And we're back with more great music on ${STATION_CONFIG.stationName}.`,
+                `And we're back with more great music on ${STATION_CONFIG?.stationName || 'our station'}.`,
                 `Thanks for your patience. Now back to the hits.`,
                 `And now, back to our regularly scheduled programming.`,
                 `Let's get back to what you came for - more great tunes.`,
@@ -443,7 +207,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
 
         // For intro → music transitions, announce the upcoming track
         if (prevType === 'intro' && nextType === 'music') {
-            return `Up next on ${STATION_CONFIG.stationName}, ${nextTitle}${nextMeta.artist ? ` by ${nextMeta.artist}` : ''}.`;
+            return `Up next on ${STATION_CONFIG?.stationName || 'our station'}, ${nextTitle}${nextMeta.artist ? ` by ${nextMeta.artist}` : ''}.`;
         }
 
         // For transitions from DJ talk to music
@@ -452,7 +216,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                 `Here's ${nextTitle}.`,
                 `Let's kick things up with ${nextTitle}.`,
                 `Time for some music. This is ${nextTitle}.`,
-                `You're listening to ${STATION_CONFIG.stationName}, and this is ${nextTitle}.`,
+                `You're listening to ${STATION_CONFIG?.stationName || 'our station'}, and this is ${nextTitle}.`,
                 `Let's get back to the music with ${nextTitle}.`
             ];
             return djToMusicTransitions[Math.floor(Math.random() * djToMusicTransitions.length)];
@@ -461,14 +225,13 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         // For music to music transitions (use AI for better variety)
         if (prevType === 'music' && nextType === 'music') {
             // For music-to-music, use the AI for interesting transitions
-            const context = `${STATION_CONFIG.context}. The station, '${STATION_CONFIG.stationName}', has the vibe of "${STATION_CONFIG.vibe}". DJ Name: '${STATION_CONFIG.djName}'.`;
+            const context = `${STATION_CONFIG?.context || "You are playing the role of a Radio DJ"}. The station, '${STATION_CONFIG?.stationName || "Unknown Station"}', has the vibe of "${STATION_CONFIG?.vibe || "A mainstream popular commercial radio station"}". DJ Name: '${STATION_CONFIG?.djName || "DJ Bob"}'.`;
             // Extracted default prompt and funny suffix for clarity
-            const basePrompt = STATION_CONFIG.aiPrompts.segway || "Write a smooth segway.";
-            const funnySuffix = includeFunny ? `\n\n${STATION_CONFIG.aiPrompts.segwayFunny}` : "";
+            const basePrompt = STATION_CONFIG?.aiPrompts?.segway || "Write a smooth segway.";
+            const funnySuffix = includeFunny ? `\n\n${STATION_CONFIG?.aiPrompts?.segwayFunny || "Add a touch of humor to the segway."}` : "";
 
             // Combine into a single prompt expression
             const prompt = `${basePrompt}${funnySuffix}`;
-
 
             // Get noteworthy listener comment if available
             let listenerFeedback = '';
@@ -497,7 +260,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             const userPrompt = `
                 You are a lively and enthusiastic DJ on a galactic space station.
 
-                Here’s the context for the songs:
+                Here's the context for the songs:
 
                 Previous song:
                 - Title: "${prevTitle}"
@@ -537,7 +300,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                 `).join('')}
                 ` : ''}
 
-                ${STATION_CONFIG.enhancedEngagement?.enabled ? 
+                ${3 === 2 ? 
                   (() => {
                     const comment = engagementMonitor.getCommentForSegway();
                     if (comment) {
@@ -565,13 +328,12 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
 
                 ${prompt}
 
-                Respond only with the DJ’s spoken words. Limit to 1–2 sentences. Be natural and entertaining.
+                Respond only with the DJ's spoken words. Limit to 1–2 sentences. Be natural and entertaining.
                 `;
 
             console.log("Generating music-to-music segway between:", prevTitle, "→", nextTitle);
 
             // Call OpenAI API
-            const openai = require('openai');
             const openaiClient = new openai.OpenAI({
                 apiKey: process.env.OPENAI_API_KEY
             });
@@ -615,11 +377,11 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         }
 
         // Default fallback - use AI for any other combinations
-        const context = `${STATION_CONFIG.context}. The station, '${STATION_CONFIG.stationName}', has the vibe of "${STATION_CONFIG.vibe}". DJ Name: '${STATION_CONFIG.djName}'.`;
+        const context = `${STATION_CONFIG?.context || "You are playing the role of a Radio DJ"}. The station, '${STATION_CONFIG?.stationName || "Unknown Station"}', has the vibe of "${STATION_CONFIG?.vibe || "A mainstream popular commercial radio station"}". DJ Name: '${STATION_CONFIG?.djName || "DJ Bob"}'.`;
 
         // Extracted default prompt and funny suffix for clarity
-        const basePrompt = STATION_CONFIG.aiPrompts.segway || "Write a smooth segway.";
-        const funnySuffix = includeFunny ? `\n\n${STATION_CONFIG.aiPrompts.segwayFunny}` : "";
+        const basePrompt = STATION_CONFIG?.aiPrompts?.segway || "Write a smooth segway.";
+        const funnySuffix = includeFunny ? `\n\n${STATION_CONFIG?.aiPrompts?.segwayFunny || "Add a touch of humor to the segway."}` : "";
 
         // Combine into a single prompt expression
         const prompt = `${basePrompt}${funnySuffix}`;
@@ -628,7 +390,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         const userPrompt = `
             You are a lively and enthusiastic DJ on a galactic space station.
 
-            Here’s the context for the songs:
+            Here's the context for the songs:
 
             Previous song:
             - Title: "${prevTitle}"
@@ -668,7 +430,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             `).join('')}
             ` : ''}
 
-            ${STATION_CONFIG.enhancedEngagement?.enabled ? 
+            ${2 === 3 ? 
               (() => {
                 const comment = engagementMonitor.getCommentForSegway();
                 if (comment) {
@@ -696,13 +458,12 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
 
             ${prompt}
 
-            Respond only with the DJ’s spoken words. Limit to 1–2 sentences. Be natural and entertaining.
+            Respond only with the DJ's spoken words. Limit to 1–2 sentences. Be natural and entertaining.
             `;
 
         console.log("Generating segway between:", prevTitle, "→", nextTitle);
 
         // Call OpenAI API
-        const openai = require('openai');
         const openaiClient = new openai.OpenAI({
             apiKey: process.env.OPENAI_API_KEY
         });
@@ -720,10 +481,132 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         console.log("Generated segway text:", segwayText);
         return segwayText;
     } catch (error) {
-        console.error(`Error generating segway: ${error.message}`);
+        console.error(`SegwayManager: Error generating segway: ${error.message}`);
         // Fallback text if API fails
-        return `And that was ${prevMeta?.title || 'our last track'}. Coming up next on ${STATION_CONFIG.stationName}!`;
+        return `And that was ${prevMeta?.title || 'our last track'}. Coming up next on ${STATION_CONFIG?.stationName || 'our station'}!`;
     }
 }
 
-module.exports = { createDirectories, initPromptWatcher };
+/**
+ * Generate and save a segway audio file.
+ *
+ * @param {string} segwayText - Text for the segway.
+ * @param {Object} prevMeta - Metadata for the previous track.
+ * @param {Object} nextMeta - Metadata for the next track.
+ * @param {string} key - Optional key for the segway filename.
+ * @returns {Promise<string>} - Path to the generated segway file.
+ */
+async function prepareSegway(segwayText, prevMeta, nextMeta, key = '') {
+    // Check if STATION_CONFIG is defined
+    if (typeof STATION_CONFIG === 'undefined' || !STATION_CONFIG) {
+        console.error('SegwayManager: STATION_CONFIG is not defined');
+        return null;
+    }
+
+    const timestamp = Date.now();
+    const segwayFileName = `segway_${key || 'transition'}_${timestamp}.mp3`;
+    const segwayFilePath = path.join(SEGWAY_DIR, segwayFileName);
+
+    try {
+        console.log(`SegwayManager: Generating segway audio (type: ${key || 'transition'})...`);
+
+        // Generate the segway audio file with TTS
+        await generateTTS(segwayText, segwayFilePath, {
+            title: `${prevMeta.title || "Previous"} -> ${nextMeta.title || "Next"}`,
+            artist: STATION_CONFIG?.stationName || 'Unknown Station',
+            comment: `Segway from ${prevMeta.type} to ${nextMeta.type}`,
+        }, "segway");
+
+        //console.log(`SegwayManager: Segway generated and saved: ${segwayFilePath}`);
+        return segwayFilePath;
+    } catch (error) {
+        console.error(`SegwayManager: Failed to prepare segway: ${error.message}`);
+        return null;
+    }
+}
+
+/**
+ * Remove old segway files that are no longer needed.
+ *
+ * @param {Array<Object>} playbackQueue - Current playback queue (to ensure segways are still relevant).
+ * @returns {Promise<void>}
+ */
+async function removeOldSegways(playbackQueue = []) {
+    try {
+        if (!fs.existsSync(SEGWAY_DIR)) {
+            fs.mkdirSync(SEGWAY_DIR, { recursive: true });
+            return;
+        }
+
+        const segwayFiles = fs.readdirSync(SEGWAY_DIR)
+            .filter(file => file.startsWith('segway_') && file.endsWith('.mp3'));
+
+        if (segwayFiles.length === 0) return;
+
+        console.log(`SegwayManager: Found ${segwayFiles.length} segway files to check`);
+
+        // Keep track of files to delete
+        let filesToDelete = [];
+
+        // Get current time for age-based cleanup
+        const now = Date.now();
+
+        // Minimum age (in milliseconds) before a segway file can be deleted
+        // This prevents deleting files that were just created and might be needed soon
+        const MIN_AGE_MS = 60 * 1000; // 60 seconds
+
+        for (const segway of segwayFiles) {
+            const segwayPath = path.join(SEGWAY_DIR, segway);
+
+            // Extract timestamp from filename (segway_type_timestamp.mp3)
+            const timestampMatch = segway.match(/segway_.*?_(\d+)\.mp3$/);
+            const fileTimestamp = timestampMatch ? parseInt(timestampMatch[1]) : 0;
+            const fileAge = now - fileTimestamp;
+
+            // Skip files that are too new, regardless of queue status
+            if (fileAge < MIN_AGE_MS) {
+                continue;
+            }
+
+            // If playbackQueue is provided, check if segway is still relevant
+            if (playbackQueue.length > 0) {
+                // Check if this segway is referenced in the queue
+                const isRelevant = playbackQueue.some(item => 
+                    item.segway && item.segway.filepath === segwayPath
+                );
+
+                if (!isRelevant) {
+                    filesToDelete.push(segwayPath);
+                }
+            } else {
+                // If no queue provided, mark all old segway files for deletion (cleanup mode)
+                // But still respect the minimum age
+                filesToDelete.push(segwayPath);
+            }
+        }
+
+        // Delete the files that are no longer needed
+        let deletedCount = 0;
+        for (const filePath of filesToDelete) {
+            try {
+                await unlinkAsync(filePath);
+                deletedCount++;
+            } catch (err) {
+                console.error(`Error deleting segway file ${filePath}: ${err.message}`);
+            }
+        }
+
+        if (deletedCount > 0) {
+            console.log(`SegwayManager: 🧹 Deleted ${deletedCount} old segway files`);
+        }
+    } catch (err) {
+        console.error(`SegwayManager: Failed to remove old segways -> ${err.message}`);
+    }
+}
+
+module.exports = {
+    getTrackContext,
+    generateSegway,
+    prepareSegway,
+    removeOldSegways
+};

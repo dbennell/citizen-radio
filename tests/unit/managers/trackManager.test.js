@@ -37,19 +37,19 @@ describe('Track Manager', () => {
 
   beforeEach(() => {
     jest.resetAllMocks();
-    
+
     // Setup default mocks
     path.join.mockImplementation((...args) => args.join('/'));
     path.relative.mockImplementation((from, to) => {
       // Simple mock implementation that removes the from part from the to path
       return to.replace(from, '');
     });
-    
+
     // Mock fs
     fs.existsSync.mockReturnValue(true);
     fs.readdirSync.mockReturnValue(['track1.mp3', 'track2.mp3', 'track3.mp3', 'not-an-mp3.txt']);
     fs.unlinkSync.mockImplementation(() => {});
-    
+
     // Mock playLogManager
     playLogManager.getPlayCount.mockImplementation((relPath) => {
       // Return different play counts for different tracks
@@ -62,14 +62,14 @@ describe('Track Manager', () => {
       { relPath: 'music/track1.mp3', type: 'music' },
       { relPath: 'dj/track1.mp3', type: 'dj' }
     ]);
-    
+
     // Mock utils
     utils.extractMetadata.mockImplementation((filepath) => ({
       title: `Title from ${path.basename(filepath)}`,
       artist: `Artist from ${path.basename(filepath)}`,
       album: `Album from ${path.basename(filepath)}`
     }));
-    
+
     // Mock ratingsManager
     ratingsManager.getRatingForTrack.mockImplementation((relPath) => {
       // Return different ratings for different tracks
@@ -86,7 +86,7 @@ describe('Track Manager', () => {
 
   test('should pick next track of specified type', async () => {
     const result = await trackManager.pickNextTrack('music');
-    
+
     expect(fs.existsSync).toHaveBeenCalledWith('/mock/data/ready/music');
     expect(fs.readdirSync).toHaveBeenCalledWith('/mock/data/ready/music');
     expect(result).toHaveProperty('filepath');
@@ -97,23 +97,23 @@ describe('Track Manager', () => {
 
   test('should handle empty directory', async () => {
     fs.readdirSync.mockReturnValue([]);
-    
+
     const result = await trackManager.pickNextTrack('music');
-    
+
     expect(result).toEqual({ filepath: null, meta: null });
   });
 
   test('should handle non-existent directory', async () => {
     fs.existsSync.mockReturnValue(false);
-    
+
     const result = await trackManager.pickNextTrack('music');
-    
+
     expect(result).toEqual({ filepath: null, meta: null });
   });
 
   test('should filter out non-mp3 files', async () => {
     const result = await trackManager.pickNextTrack('music');
-    
+
     // Verify that only MP3 files were considered
     expect(result.filepath).toMatch(/\.mp3$/);
     expect(result.filepath).not.toMatch(/not-an-mp3\.txt$/);
@@ -125,15 +125,15 @@ describe('Track Manager', () => {
       if (relPath.includes('track3')) return 0;
       return 1;
     });
-    
+
     // Make sure track3 is not in recent plays
     playLogManager.getLastPlays.mockReturnValue([
       { relPath: 'music/track1.mp3', type: 'music' },
       { relPath: 'music/track2.mp3', type: 'music' }
     ]);
-    
+
     const result = await trackManager.pickNextTrack('music');
-    
+
     // Should pick track3 as it's never been played
     expect(result.filepath).toContain('track3.mp3');
   });
@@ -141,15 +141,15 @@ describe('Track Manager', () => {
   test('should avoid recently played tracks', async () => {
     // Set up mock to make all tracks played the same number of times
     playLogManager.getPlayCount.mockReturnValue(1);
-    
+
     // Make track1 and track2 recently played
     playLogManager.getLastPlays.mockReturnValue([
       { relPath: 'music/track1.mp3', type: 'music' },
       { relPath: 'music/track2.mp3', type: 'music' }
     ]);
-    
+
     const result = await trackManager.pickNextTrack('music');
-    
+
     // Should pick track3 as it's not recently played
     expect(result.filepath).toContain('track3.mp3');
   });
@@ -157,12 +157,12 @@ describe('Track Manager', () => {
   test('should use weighted selection for music tracks when rating system is enabled', async () => {
     // Mock Math.random to return a predictable value
     const mockRandom = jest.spyOn(Math, 'random').mockReturnValue(0.5);
-    
+
     const result = await trackManager.pickNextTrack('music');
-    
+
     expect(ratingsManager.getRatingForTrack).toHaveBeenCalled();
     expect(ratingsManager.getTicketsForTrack).toHaveBeenCalled();
-    
+
     // Restore Math.random
     mockRandom.mockRestore();
   });
@@ -170,32 +170,32 @@ describe('Track Manager', () => {
   test('should use random selection for non-music tracks', async () => {
     // Mock Math.random to return a predictable value
     const mockRandom = jest.spyOn(Math, 'random').mockReturnValue(0.5);
-    
+
     const result = await trackManager.pickNextTrack('dj');
-    
+
     // For non-music tracks, it should not use the rating system
     expect(ratingsManager.getRatingForTrack).not.toHaveBeenCalled();
     expect(ratingsManager.getTicketsForTrack).not.toHaveBeenCalled();
-    
+
     // Restore Math.random
     mockRandom.mockRestore();
   });
 
-  test('should perform weighted selection based on ratings', () => {
+  test('should perform weighted selection based on ratings', async () => {
     // Create candidates with different ratings
     const candidates = [
       { rel: 'music/track1.mp3', fp: '/mock/data/ready/music/track1.mp3' }, // Rating 5
       { rel: 'music/track2.mp3', fp: '/mock/data/ready/music/track2.mp3' }, // Rating 3
       { rel: 'music/track3.mp3', fp: '/mock/data/ready/music/track3.mp3' }  // Rating null (default 3)
     ];
-    
+
     // Mock Math.random to return a predictable value that will select track1
     // Track1 has 5 tickets, track2 has 3 tickets, track3 has 3 tickets
     // Total tickets: 11, so index 5 (0.5 * 11 = 5.5 -> floor -> 5) should be track1
     const mockRandom = jest.spyOn(Math, 'random').mockReturnValue(0.5);
-    
-    const result = trackManager.performWeightedSelection(candidates);
-    
+
+    const result = await trackManager.performWeightedSelection(candidates);
+
     expect(result).toEqual(candidates[0]); // Should select track1
     expect(ratingsManager.getRatingForTrack).toHaveBeenCalledWith('music/track1.mp3');
     expect(ratingsManager.getRatingForTrack).toHaveBeenCalledWith('music/track2.mp3');
@@ -203,7 +203,7 @@ describe('Track Manager', () => {
     expect(ratingsManager.getTicketsForTrack).toHaveBeenCalledWith(5);
     expect(ratingsManager.getTicketsForTrack).toHaveBeenCalledWith(3);
     expect(ratingsManager.getTicketsForTrack).toHaveBeenCalledWith(null);
-    
+
     // Restore Math.random
     mockRandom.mockRestore();
   });
@@ -211,9 +211,9 @@ describe('Track Manager', () => {
   test('should clean up segway files', () => {
     // Mock segway files
     fs.readdirSync.mockReturnValue(['segway_123.mp3', 'segway_456.mp3', 'not_a_segway.mp3']);
-    
+
     trackManager.cleanupSegways();
-    
+
     expect(fs.existsSync).toHaveBeenCalledWith('/mock/data/ready/segway');
     expect(fs.readdirSync).toHaveBeenCalledWith('/mock/data/ready/segway');
     expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segway/segway_123.mp3');
@@ -228,9 +228,9 @@ describe('Track Manager', () => {
     fs.unlinkSync.mockImplementation(() => {
       throw new Error('Unlink error');
     });
-    
+
     trackManager.cleanupSegways();
-    
+
     expect(mockConsoleError).toHaveBeenCalledWith(
       expect.stringContaining('Error deleting segway file'),
       expect.any(Error)
@@ -239,9 +239,9 @@ describe('Track Manager', () => {
 
   test('should handle non-existent segway directory', () => {
     fs.existsSync.mockReturnValue(false);
-    
+
     trackManager.cleanupSegways();
-    
+
     expect(fs.readdirSync).not.toHaveBeenCalled();
     expect(fs.unlinkSync).not.toHaveBeenCalled();
   });

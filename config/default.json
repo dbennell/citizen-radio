@@ -1,12 +1,36 @@
 {
   "stationName": "Radio Arc-Corp",
   "djName": "DJ Quantum",
+  "debug": false,
   "uptimeHours": null,
   "uptimeMode": "track",
   "trackHistory": {
     "historySize": 20,
     "weights": { "id": 0, "intro": 0, "ad": 2, "dj": 60, "music": 100 }
   },
+  "schedule": {
+    "defaultPattern": [
+      "segway", "music", "segway", "music", "ad", "music", "dj",
+      "segway", "music", "segway", "music", "ad", "music", "intro"
+    ]
+  },
+  "contentQueue": {
+    "minQueueSize": 2,
+    "maxQueueSize": 4
+  },
+  "djOptions": {
+    "includePodcasts": true
+  },
+  "context": "You are playing the role of a (NPC) Radio DJ in the game world of Star Citizen.",
+  "vibe": "A mainstream popular commercial radio station based in Area-18 on ArcCorp playing modern chart music.",
+  "aiPrompts": {
+    "dj": "A lively and enthusiastic (slightly sarcastic and comedic) radio host for a galactic space station. Add flair and personality to this regular dj talk segment! Only the text to be spoken!",
+    "ad": "Generate compelling commercial voiceover for futuristic product advertisements. Only the text to be spoken! You are not the DJ, you are are 'Larry Scott' Advert Sales Guy.",
+    "intro": "Create energetic station intros that captivate listeners. Only the text to be spoken!",
+    "segway": "Write a seamless transition between segments. Only the text to be spoken!",
+    "segwayFunny": "Before announcing the next track, throw in a quick, off-the-cuff, DJ-style joke, cheeky comment or thought of the day."
+  },
+  "segwayFunny": 0.25,
   "ttsProfiles": {
     "dj": "en-US-Chirp3-HD-Enceladus",
     "ad": "en-US-Chirp3-HD-Charon",
@@ -21,38 +45,6 @@
     "en-UK-Chirp-HD-*",
     "en-AU-Chirp-HD-*"
   ],
-  "djOptions": {
-    "includePodcasts": true
-  },
-  "debug": false,
-  "context": "You are playing the role of a (NPC) Radio DJ in the game world of Star Citizen.",
-  "vibe": "A mainstream popular commercial radio station based in Area-18 on ArcCorp playing modern chart music.",
-  "segwayFunny": 0.25,
-  "aiPrompts": {
-    "dj": "A lively and enthusiastic (slightly sarcastic and comedic) radio host for a galactic space station. Add flair and personality to this regular dj talk segment! Only the text to be spoken!",
-    "ad": "Generate compelling commercial voiceover for futuristic product advertisements. Only the text to be spoken! You are not the DJ, you are are 'Larry Scott' Advert Sales Guy.",
-    "intro": "Create energetic station intros that captivate listeners. Only the text to be spoken!",
-    "segway": "Write a seamless transition between segments. Only the text to be spoken!",
-    "segwayFunny": "Before announcing the next track, throw in a quick, off-the-cuff, DJ-style joke, cheeky comment or thought of the day."
-  },
-  "schedule": {
-    "defaultPattern": [
-      "intro",
-      "segway",
-      "music",
-      "segway",
-      "music",
-      "ad",
-      "music",
-      "dj",
-      "segway",
-      "music",
-      "segway",
-      "music",
-      "ad",
-      "music"
-    ]
-  },
   "streamMode": "youtube",
   "youtube": {
     "rtmpUrl": "rtmp://a.rtmp.youtube.com/live2",
@@ -76,10 +68,6 @@
     "displayOnStream": true,
     "streamDelay": 0,
     "postTrackWindow": 30
-  },
-  "contentQueue": {
-    "minQueueSize": 2,
-    "maxQueueSize": 4
   },
   "analyticsEngine": {
     "enabled": true,
@@ -116,6 +104,38 @@
       "worst": 0.8
     },
     "ratingWeight": 0.5,
-    "segwayReferenceChance": 0.7
+    "segwayReferenceChance": 0.7,
+    "useLLMSentimentAnalysis": true
+  },
+  "overlayManager": {
+    "emojiCacheSize": 200,
+    "commentCacheSize": 50
+  },
+  "fileIO": {
+    "chat": {
+      "bufferSize": 64000,
+      "flushInterval": 5000,
+      "rotationSize": 10485760,
+      "maxArchives": 10,
+      "archiveDir": "archives/chat"
+    },
+    "feedback": {
+      "bufferSize": 32000,
+      "flushInterval": 10000,
+      "rotationSize": 5242880,
+      "maxArchives": 5,
+      "archiveDir": "archives/feedback"
+    },
+    "ratings": {
+      "bufferSize": 16000,
+      "flushInterval": 15000,
+      "rotationSize": 2097152,
+      "maxArchives": 3,
+      "archiveDir": "archives/ratings"
+    },
+    "processedIds": {
+      "maxSize": 10000,
+      "cleanupInterval": 3600000
+    }
   }
 }

@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { pickNextTrack } = require('../managers/trackManager');
 const { getLastPlays, appendPlayLog } = require('../managers/playLogManager');
-const { generateSegway, prepareSegway } = require('../processors/promptProcessor');
+const segwayManager = require('../managers/segwayManager');
 const { playFile, streamFile, getRandomCoverImage } = require('./streamer');
 const { STATION_CONFIG, READY_DIR } = require('./config');
 const chalk = require('chalk').default;
@@ -11,11 +11,20 @@ const engagementMonitor = require('../managers/engagementMonitor');
 const overlayManager = require('../managers/overlayManager');
 const { fetchLiveVideoId, extractMetadata, getRecommendedPollingInterval } = require('../utils');
 const ContentQueueManager = require('../managers/contentQueueManager');
+const IntervalManager = require('../utils/intervalManager');
 
 let shouldStop = false;
 let stopAfterNextMusic = false;
 let persistentVideoId = STATION_CONFIG.youtube?.videoId || null;
 let contentQueue = null;
+
+// Create interval manager for feedback polling
+const intervalManager = new IntervalManager({
+    initialInterval: (STATION_CONFIG.ratingSystem?.commentCheckInterval || 5) * 1000,
+    maxInterval: 60000, // 1 minute max
+    backoffFactor: 2,
+    resetAfter: 300000 // 5 minutes
+});
 
 
 
@@ -64,7 +73,7 @@ async function playbackLoop() {
     });
 
     await contentQueue.initialize();
-    console.log(chalk.blue(`📋 Content queue initialized with ${contentQueue.queueLength} items`));
+    //console.log(chalk.blue(`📋 Content queue initialized with ${contentQueue.queueLength} items`));
 
     // Variable to track the periodic feedback polling interval
     let feedbackPollingInterval = null;
@@ -92,10 +101,29 @@ async function playbackLoop() {
         const queueItem = contentQueue.getNextItem();
 
         if (!queueItem) {
-            console.warn('⚠️ Content queue is empty, waiting for replenishment...');
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Track consecutive empty queue occurrences to prevent infinite loops
+            if (typeof emptyQueueCount === 'undefined') {
+                var emptyQueueCount = 1;
+            } else {
+                emptyQueueCount++;
+            }
+
+            // Exponential backoff for repeated empty queue situations
+            const backoffDelay = Math.min(1000 * Math.pow(1.5, Math.min(emptyQueueCount - 1, 10)), 30000);
+
+            console.warn(`⚠️ Content queue is empty (attempt ${emptyQueueCount}), waiting ${backoffDelay}ms for replenishment...`);
+
+            // If we've had too many consecutive empty queues, log a more severe warning
+            if (emptyQueueCount >= 10) {
+                console.error(`🚨 Queue has been empty for ${emptyQueueCount} consecutive attempts. Check content availability.`);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, backoffDelay));
             continue;
         }
+
+        // Reset empty queue counter when we successfully get an item
+        emptyQueueCount = 0;
 
         try {
             // Play segway if available
@@ -110,10 +138,11 @@ async function playbackLoop() {
                     }
 
 
-                    // Delete segway file after playing
-                    if (fs.existsSync(queueItem.segway.filepath)) {
-                        fs.unlinkSync(queueItem.segway.filepath);
-                    }
+                    // Don't delete segway files here - let the segwayManager handle cleanup
+                    // This prevents premature deletion of segway files that might be needed again
+                    console.log(`🔄 Played segway file: ${path.basename(queueItem.segway.filepath)}`);
+
+                    // Mark the file for potential cleanup during the next segwayManager.removeOldSegways() call
                 } catch (segwayErr) {
                     console.error('Error playing segway:', segwayErr);
                 }
@@ -127,7 +156,7 @@ async function playbackLoop() {
                     // Reset engagement monitor comments when changing tracks
                     if (STATION_CONFIG.enhancedEngagement?.enabled && engagementMonitor) {
                         engagementMonitor.resetComments();
-                        console.log(`🗨️ Cleared engagement monitor comments for new track: "${queueItem.meta.title}"`);
+                        //console.log(`🗨️ Cleared engagement monitor comments for new track: "${queueItem.meta.title}"`);
                     }
 
                     ratingManager.setCurrentlyPlaying({ 
@@ -147,57 +176,29 @@ async function playbackLoop() {
 
                     // Set up periodic feedback polling based on configuration
                     if (STATION_CONFIG.enhancedEngagement?.enabled && vid) {
-                        // Get the configured interval (in seconds) or default to 5 seconds
-                        const configIntervalSeconds = STATION_CONFIG.ratingSystem?.commentCheckInterval || 5;
-                        const configIntervalMs = configIntervalSeconds * 1000;
+                        // Create a unique ID for this polling interval based on the track
+                        const pollingId = `feedback-polling-${queueItem.filepath}`;
 
-                        // Function to create a new polling interval with dynamic timing
-                        const createPollingInterval = () => {
-                            // Clear any existing interval
-                            if (feedbackPollingInterval) {
-                                clearTimeout(feedbackPollingInterval);
-                                feedbackPollingInterval = null;
+                        // Stop any existing polling interval with this ID
+                        intervalManager.stop(pollingId);
+
+                        // Start a new polling interval
+                        intervalManager.start(pollingId, async () => {
+                            // Poll for new comments
+                            const count = await ratingManager.pollForComments(vid);
+                            if (count > 0) {
+                                //console.log(`📊 Collected ${count} comment${count===1?'':'s'} during playback`);
+
+                                // Update the overlay with new comments, but only if we have comments to show
+                                // This avoids making an unnecessary API call when there are no new comments
+                                if (STATION_CONFIG.streamMode === 'youtube' && count > 0) {
+                                    await overlayManager.updateOverlay(queueItem.filepath, vid);
+                                }
                             }
 
-                            // Get the recommended polling interval from YouTube, or use the configured interval
-                            const recommendedInterval = getRecommendedPollingInterval();
-                            const intervalMs = recommendedInterval || configIntervalMs;
-
-                            // Create a new interval with the appropriate timing
-                            feedbackPollingInterval = setTimeout(async () => {
-                                try {
-                                    // Poll for new comments
-                                    const count = await ratingManager.pollForComments(vid);
-                                    if (count > 0) {
-                                        console.log(`📊 Collected ${count} comment${count===1?'':'s'} during playback`);
-
-                                        // Update the overlay with new comments, but only if we have comments to show
-                                        // This avoids making an unnecessary API call when there are no new comments
-                                        if (STATION_CONFIG.streamMode === 'youtube' && count > 0) {
-                                            try {
-                                                await overlayManager.updateOverlay(queueItem.filepath, vid);
-                                            } catch (overlayError) {
-                                                console.error('Error updating overlay:', overlayError);
-                                                // Don't rethrow, continue with the next polling interval
-                                            }
-                                        }
-                                    }
-
-                                    // Set up the next polling interval
-                                    createPollingInterval();
-                                } catch (error) {
-                                    console.error('Error polling for comments:', error);
-                                    // Still set up the next interval even if there was an error
-                                    // But use a longer interval to avoid hitting rate limits
-                                    setTimeout(() => {
-                                        createPollingInterval();
-                                    }, intervalMs * 2); // Double the interval on error
-                                }
-                            }, intervalMs);
-                        };
-
-                        // Start the polling process
-                        createPollingInterval();
+                            // Return true to indicate success
+                            return true;
+                        }, getRecommendedPollingInterval());
                     }
                 }
 
@@ -209,24 +210,25 @@ async function playbackLoop() {
                     await playFile(queueItem.filepath);
                 }
 
-                // Log the play
+                // Log the play (skip segways)
                 try {
-                    appendPlayLog(trackRel, queueItem.type, queueItem.meta);
-                    console.log(`✅ Logged play: ${queueItem.type} "${queueItem.meta.title}" (${trackRel})`);
+                    // Don't log segways to play.log as they're never reused
+                    if (queueItem.type !== 'segway') {
+                        appendPlayLog(trackRel, queueItem.type, queueItem.meta);
+                        console.log(`✅ Logged play: ${queueItem.type} "${queueItem.meta.title}" (${trackRel})`);
+                    }
                 } catch (logErr) {
                     console.error(`❌ Error logging play: ${queueItem.type} "${queueItem.meta.title}" (${trackRel}):`, logErr);
                 }
 
                 if (queueItem.type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
-                    // Clear the polling interval
-                    if (feedbackPollingInterval) {
-                        clearTimeout(feedbackPollingInterval);
-                        feedbackPollingInterval = null;
-                    }
+                    // Stop all polling intervals for this track
+                    const pollingId = `feedback-polling-${queueItem.filepath}`;
+                    intervalManager.stop(pollingId);
 
                     const windowEnd = ratingManager.closeCommentWindow();
                     const count = await ratingManager.pollForComments(vid);
-                    console.log(`📊 Collected ${count} comment${count===1?'':'s'} up to ${windowEnd}`);
+                    //console.log(`📊 Collected ${count} comment${count===1?'':'s'} up to ${windowEnd}`);
 
                     // Update overlay without clearing comments when track ends
                     if (STATION_CONFIG.streamMode === 'youtube') {
@@ -236,7 +238,7 @@ async function playbackLoop() {
                     // Reset engagement monitor comments when track ends
                     if (STATION_CONFIG.enhancedEngagement?.enabled && engagementMonitor) {
                         engagementMonitor.resetComments();
-                        console.log(`🗨️ Cleared engagement monitor comments after track ended: "${queueItem.meta.title}"`);
+                        //console.log(`🗨️ Cleared engagement monitor comments after track ended: "${queueItem.meta.title}"`);
                     }
                 }
             } catch (playErr) {
@@ -279,16 +281,28 @@ async function pickNextTrackWithPodcasts() {
     const all = [...djFiles, ...podFiles].filter(f => /\.(mp3|wav)$/i.test(f));
     if (!all.length) return null;
     const choice = all[Math.floor(Math.random() * all.length)];
-    const meta = await extractMetadata(choice);
+    const meta = await extractMetadata(choice) || {};
     return { filepath: choice, meta };
 }
 
-function stopPlayback() { 
+async function stopPlayback() { 
     shouldStop = true; 
 
     // Clean up content queue if it exists
     if (contentQueue) {
         contentQueue.cleanup();
+    }
+
+    // Stop all polling intervals
+    intervalManager.stopAll();
+    console.log(`Stopped ${intervalManager.count()} polling intervals`);
+
+    // Flush all buffered writes to disk
+    try {
+        const ratingManager = require('../managers/ratingsManager');
+        await ratingManager.flushAllBuffers();
+    } catch (error) {
+        console.error('Error flushing buffers during shutdown:', error);
     }
 }
 
@@ -304,10 +318,22 @@ function getContentQueue() {
     return contentQueue;
 }
 
+/**
+ * Get information about active polling intervals
+ * @returns {Object} - Information about active polling intervals
+ */
+function getPollingInfo() {
+    return {
+        activeIntervals: intervalManager.getRunningIntervals(),
+        count: intervalManager.count()
+    };
+}
+
 module.exports = {
     playbackLoop,
     stopPlayback,
     requestStop,
     getPersistentVideoId,
-    getContentQueue
+    getContentQueue,
+    getPollingInfo
 };

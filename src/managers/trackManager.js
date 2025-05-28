@@ -7,6 +7,7 @@ const { getPlayCount, getLastPlays } = require('./playLogManager');
 const { extractMetadata }            = require('../utils');
 const { STATION_CONFIG, READY_DIR }  = require('../core/config');
 const ratingManager = require('./ratingsManager');
+const { generateTTS } = require('../utils/ttsHelper');
 
 
 /**
@@ -57,38 +58,45 @@ async function pickNextTrack(type) {
         !recent.some(e => e.relPath === item.rel)
     );
 
-    // 5) if everything is recent → least‑recently‑played half of full list
-    if (available.length === 0) {
-        items.sort((a, b) =>
-            distanceFromRecent(b.rel, recent) - distanceFromRecent(a.rel, recent)
-        );
-        const half = Math.max(1, Math.floor(items.length / 2));
-        available  = items.slice(0, half);
+    // 5) exclude already queued duplicates (any type)
+    try {
+        const orchestrator = require('../core/orchestrator');
+        const contentQueueManager = orchestrator.getContentQueue();
+
+        if (contentQueueManager && contentQueueManager.contentQueue) {
+            const queuedTracks = contentQueueManager.contentQueue;
+
+            // Filter out tracks that are already in the queue
+            available = available.filter(item =>
+                !queuedTracks.some(queueItem => {
+                    // Get the relative path of the queued item for comparison
+                    const queuedRelPath = queueItem.meta && queueItem.meta.relPath;
+                    return queuedRelPath === item.rel;
+                })
+            );
+        }
+    } catch (err) {
+        console.log('Unable to filter out queued tracks:', err.message);
     }
 
     // 6) prefer never‑played
     let candidates = available.filter(i => i.count === 0);
+    let choice = await performWeightedSelection(candidates);
 
-    // 7) else least‑played + least‑recently‑played
-    if (candidates.length === 0) {
-        available.sort((a, b) => {
-            if (a.count !== b.count) return a.count - b.count;
-            return distanceFromRecent(b.rel, recent) - distanceFromRecent(a.rel, recent);
-        });
-        const half = Math.max(1, Math.floor(available.length / 2));
-        candidates = available.slice(0, half);
+
+    // 7) Check if we have a valid choice
+    if (!choice || !choice.fp) {
+        console.warn(`No valid ${type} track found to play`);
+        return { filepath: null, meta: null };
     }
 
-    // 8) Use the weighted selection if rating system is enabled and this is music
-    let choice;
-    if (type === 'music' && STATION_CONFIG.ratingSystem?.enabled) {
-        choice = performWeightedSelection(candidates);
-    } else {
-        // Otherwise use random selection
-        choice = candidates[Math.floor(Math.random() * candidates.length)];
-    }
-
+    // 8)
     const meta = extractMetadata(choice.fp);
+    if (!meta) {
+        console.warn(`Failed to extract metadata for ${choice.fp}`);
+        return { filepath: choice.fp, meta: { title: path.basename(choice.fp), filename: path.basename(choice.fp) } };
+    }
+
     meta.type = type;
     meta.relPath = choice.rel; // Add relPath to metadata for rating lookup
 
@@ -97,47 +105,73 @@ async function pickNextTrack(type) {
 
 /**
  * Delete leftover segway_*.mp3 files in ready/segway/
+ * @param {Array} activeQueue - Optional array of currently queued items to preserve their segways
  */
-function cleanupSegways() {
-    const segwayDir = readyPath('segway');
-    if (!fs.existsSync(segwayDir)) return;
+async function cleanupSegways(activeQueue = null) {
+    // Use the segwayManager to clean up segway files
+    const segwayManager = require('./segwayManager');
 
-    const files = fs.readdirSync(segwayDir)
-        .filter(f => f.startsWith('segway_') && f.endsWith('.mp3'));
-
-    for (const file of files) {
-        try {
-            fs.unlinkSync(path.join(segwayDir, file));
-        } catch (err) {
-            console.error(`Error deleting segway file ${file}:`, err);
+    // If an active queue is provided, use it to preserve needed segways
+    // Otherwise, only delete segways that aren't referenced anywhere
+    try {
+        // Try to get the content queue from the orchestrator if not provided
+        if (!activeQueue) {
+            try {
+                const orchestrator = require('../core/orchestrator');
+                const contentQueue = orchestrator.getContentQueue();
+                if (contentQueue && contentQueue.contentQueue) {
+                    activeQueue = contentQueue.contentQueue;
+                    console.log(`Using active content queue with ${activeQueue.length} items for segway cleanup`);
+                }
+            } catch (err) {
+                console.log('No active content queue found, preserving all segways');
+                activeQueue = [];
+            }
         }
-    }
-    if (files.length) {
-        console.log(`Cleaned up ${files.length} segway files from ready/segway`);
+
+        // Pass the active queue to removeOldSegways to preserve needed segways
+        await segwayManager.removeOldSegways(activeQueue || []);
+    } catch (err) {
+        console.error(`Error during segway cleanup: ${err.message}`);
     }
 }
 
 /**
  * Performs weighted selection from a list of candidate tracks
  * @param {Array} candidates - List of candidate tracks
- * @returns {Object} - Selected track
+ * @returns {Promise<Object>} - Selected track
  */
-function performWeightedSelection(candidates) {
-    if (!STATION_CONFIG.ratingSystem?.enabled) {
-        // Fall back to random selection if rating system is disabled
-        return candidates[Math.floor(Math.random() * candidates.length)];
+async function performWeightedSelection(candidates) {
+    // Check if candidates array is empty
+    if (!candidates || candidates.length === 0) {
+        console.warn('No candidates provided for weighted selection');
+        return null;
     }
 
+    // if (!STATION_CONFIG.ratingSystem?.enabled) {
+    //     // Fall back to random selection if rating system is disabled
+    //     return candidates[Math.floor(Math.random() * candidates.length)];
+    // }
+
     // Map candidates with their ratings and ticket counts
-    const candidatesWithRatings = candidates.map(candidate => {
-        const rating = ratingManager.getRatingForTrack(candidate.rel) ||
+    const candidatesWithRatings = [];
+    for (const candidate of candidates) {
+        // Get rating asynchronously
+        const rating = await ratingManager.getRatingForTrack(candidate.rel) ||
             STATION_CONFIG.ratingSystem.defaultRating;
-        return {
+        // Ensure each track gets at least 1 ticket, even with low ratings
+        const tickets = Math.max(1, ratingManager.getTicketsForTrack(rating));
+        candidatesWithRatings.push({
             ...candidate,
             rating,
-            tickets: ratingManager.getTicketsForTrack(rating)
-        };
-    });
+            tickets
+        });
+    }
+
+    // Log warning only if we truly have no candidates with ratings
+    if (!candidatesWithRatings || candidatesWithRatings.length === 0) {
+        console.warn('No candidates provided with ratings for weighted selection!');
+    }
 
     // Build the raffle pool
     const rafflePool = [];
@@ -149,7 +183,8 @@ function performWeightedSelection(candidates) {
 
     // If raffle pool is empty (shouldn't happen), fall back to random
     if (rafflePool.length === 0) {
-        return candidates[Math.floor(Math.random() * candidates.length)];
+        console.warn('Raffle pool is empty, falling back to random selection');
+        return candidates.length > 0 ? candidates[Math.floor(Math.random() * candidates.length)] : null;
     }
 
     // Draw a random ticket from the pool
