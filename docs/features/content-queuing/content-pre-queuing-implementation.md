@@ -76,7 +76,7 @@ class ContentQueueManager {
   addItem(item) {
     if (this.contentQueue.length < this.maxQueueSize) {
       this.contentQueue.push(item);
-      console.log(`📋 Added ${item.type} "${item.meta.title}" to queue. Queue size: ${this.contentQueue.length}`);
+      console.log(`❇️ Added ${item.type} "${item.meta.title}" to queue. Queue size: ${this.contentQueue.length}`);
       return true;
     }
     return false;

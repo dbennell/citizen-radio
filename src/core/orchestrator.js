@@ -92,8 +92,13 @@ async function playbackLoop() {
             }
         }
 
-        // Only log "New playback cycle" when we're at the beginning of the pattern
-        if (contentQueue.currentPatternIndex === 0) {
+        // Check if we have queued content first
+        // Only log "New playback cycle" when we're at the beginning of the pattern AND there's no queued content
+        if (!contentQueue.isEmpty()) {
+            // We have queued content - continue with it instead of starting new cycle
+            console.log(`📋 Processing queued content. Queue size: ${contentQueue.queueLength}`);
+        } else if (contentQueue.currentPatternIndex === 0) {
+            // Only log new cycle when we're actually starting fresh (empty queue + start of pattern)
             console.log(chalk.green(`🎧 New playback cycle at ${new Date().toLocaleTimeString()}`));
         }
 
@@ -126,23 +131,23 @@ async function playbackLoop() {
         emptyQueueCount = 0;
 
         try {
-            // Play segway if available
+            // Play pre-generated segway if available
             if (queueItem.segway && queueItem.segway.filepath) {
                 try {
-                    console.log(`🔄 Playing queued segway before ${queueItem.type}: "${queueItem.meta.title}"`);
+                    const segwayFile = queueItem.segway.filepath;
+                    console.log(`🔄 Playing generated segway before ${queueItem.type}: "${queueItem.meta.title}"`);
 
+                    // Play the segway first, and protect it during playback
                     if (STATION_CONFIG.streamMode === 'youtube') {
-                        await streamFile(queueItem.segway.filepath);
+                        await streamFile(segwayFile);
                     } else {
-                        await playFile(queueItem.segway.filepath);
+                        await playFile(segwayFile);
                     }
 
+                    // Only clean up OTHER segways, not the one we just played
+                    await segwayManager.removeOldSegways(contentQueue.getItems(), segwayFile);
 
-                    // Don't delete segway files here - let the segwayManager handle cleanup
-                    // This prevents premature deletion of segway files that might be needed again
-                    console.log(`🔄 Played segway file: ${path.basename(queueItem.segway.filepath)}`);
-
-                    // Mark the file for potential cleanup during the next segwayManager.removeOldSegways() call
+                    //console.log(`🔄 Played segway file: ${path.basename(segwayFile)}`);
                 } catch (segwayErr) {
                     console.error('Error playing segway:', segwayErr);
                 }
@@ -166,7 +171,7 @@ async function playbackLoop() {
                         type: queueItem.type 
                     });
                     const windowStart = ratingManager.openCommentWindow();
-                    console.log(`📊 Rating: tracking "${queueItem.meta.title}" from ${windowStart}`);
+                    console.log(`📊 Rating: tracking open for "${queueItem.meta.title}" from ${windowStart}`);
 
                     // Clear any existing polling interval
                     if (feedbackPollingInterval) {
@@ -210,12 +215,14 @@ async function playbackLoop() {
                     await playFile(queueItem.filepath);
                 }
 
+                // After successful playback
+                contentQueue.markAsPlayed(queueItem);
                 // Log the play (skip segways)
                 try {
                     // Don't log segways to play.log as they're never reused
                     if (queueItem.type !== 'segway') {
                         appendPlayLog(trackRel, queueItem.type, queueItem.meta);
-                        console.log(`✅ Logged play: ${queueItem.type} "${queueItem.meta.title}" (${trackRel})`);
+                        console.log(`✏️ Logged play: ${queueItem.type} "${queueItem.meta.title}" (${trackRel})`);
                     }
                 } catch (logErr) {
                     console.error(`❌ Error logging play: ${queueItem.type} "${queueItem.meta.title}" (${trackRel}):`, logErr);

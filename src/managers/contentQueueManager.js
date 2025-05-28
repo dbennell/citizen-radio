@@ -19,6 +19,7 @@ class ContentQueueManager {
     this.lastPlayedItem = null;
     this.historySize = STATION_CONFIG.trackHistory?.historySize || 16;
     this.weights = STATION_CONFIG.trackHistory?.weights || {};
+    this.lastPlayedItem = null; // Track what was actually played
   }
 
   /**
@@ -26,6 +27,13 @@ class ContentQueueManager {
    */
   get queueLength() {
     return this.contentQueue.length;
+  }
+
+  /**
+   * Check if queue is empty
+   */
+  isEmpty() {
+    return this.contentQueue.length === 0;
   }
 
   /**
@@ -45,6 +53,22 @@ class ContentQueueManager {
   }
 
   /**
+   * Get all items in the queue without removing them
+   * @returns {Array} - A copy of the content queue
+   */
+  getItems() {
+    return [...this.contentQueue];
+  }
+
+  /**
+   * Mark an item as played (call this from orchestrator after playback)
+   */
+  markAsPlayed(item) {
+    this.lastPlayedItem = item;
+  }
+
+
+  /**
    * Get and remove the next item from the queue
    */
   getNextItem() {
@@ -55,12 +79,94 @@ class ContentQueueManager {
     const item = this.contentQueue.shift();
     this.lastPlayedItem = item;
 
+    // Check if we need to generate segways for items that have moved up in the queue
+    // Only check positions 1 and 2 (index 0 and 1) as they're now closer to being played
+    this.checkAndGenerateSegwaysForQueueItems();
+
     // Trigger replenishment if queue is below minimum size
     if (this.contentQueue.length < this.minQueueSize) {
       this.replenishQueue();
     }
 
     return item;
+  }
+
+  /**
+   * Check and generate segways for items that have moved up in the queue
+   * This ensures tracks in positions 1 and 2 have segways generated for them
+   */
+  async checkAndGenerateSegwaysForQueueItems() {
+    // Only process if we have items in the queue and a last played item
+    if (this.contentQueue.length === 0 || !this.lastPlayedItem) {
+      return;
+    }
+
+    // Only check the first two positions in the queue (index 0 and 1)
+    // as these are the ones that will be played soon
+    const itemsToCheck = Math.min(2, this.contentQueue.length);
+
+    for (let i = 0; i < itemsToCheck; i++) {
+      const queueItem = this.contentQueue[i];
+
+      // Skip if item already has a segway or is a segway itself
+      if (queueItem.segway || queueItem.type === 'segway') {
+        continue;
+      }
+
+      try {
+        // If we have a last played item, use its metadata; otherwise, create a "start" type
+        const prevMeta = this.lastPlayedItem
+          ? { ...this.lastPlayedItem.meta, type: this.lastPlayedItem.type }
+          : { title: '', type: 'start' };
+        const nextMeta = { ...queueItem.meta, type: queueItem.type };
+
+        // Get previous tracks from play history (up to 2 tracks, excluding ads)
+        const prevTracks = getLastPlays(this.historySize)
+          .filter(entry => entry.type !== 'ad' && entry.type !== 'segway')
+          .slice(0, 2)
+          .map(entry => ({
+            type: entry.type,
+            meta: entry.meta,
+            relPath: entry.relPath
+          }));
+
+        // Get next tracks from the queue (up to 2 tracks, excluding segways)
+        // Start from the current item being checked
+        const nextTracks = [
+          { type: queueItem.type, meta: queueItem.meta, filepath: queueItem.filepath },
+          ...this.contentQueue.slice(i + 1).filter(item => item.type !== 'segway').slice(0, 2)
+        ];
+
+        // Generate segway text using the segwayManager
+        const segwayText = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
+
+        if (segwayText && segwayText.trim()) {
+          // Prepare segway audio using the segwayManager
+          const segwayFile = await segwayManager.prepareSegway(
+            segwayText,
+            prevMeta,
+            nextMeta,
+            `${prevMeta.type}_to_${nextMeta.type}`
+          );
+
+          if (segwayFile) {
+            // Attach the segway to the content item
+            queueItem.segway = {
+              filepath: segwayFile,
+              text: segwayText
+            };
+            console.log(`🔄 Generated segway for ${queueItem.type} "${queueItem.meta.title}" at position ${i+1} in queue`);
+          }
+        }
+      } catch (error) {
+        console.error(`Error generating segway for queue item at position ${i+1}:`, error);
+        // Continue without a segway if generation fails
+      }
+    }
+
+    // Clean up old segway files that are no longer needed
+    // Pass null as the currently playing file since ContentQueueManager doesn't know which file is playing
+    await segwayManager.removeOldSegways(this.contentQueue, null);
   }
 
   /**
@@ -71,7 +177,7 @@ class ContentQueueManager {
     // Segways don't count towards the queue limit
     if (item.type === 'segway' || this.contentQueue.length < this.maxQueueSize) {
       this.contentQueue.push(item);
-      console.log(`📋 Added ${item.type} "${item.meta.title}" to queue. Queue size: ${this.contentQueue.length}`);
+      console.log(`❇️ Added ${item.type} "${item.meta.title}" to queue. Queue size: ${this.contentQueue.length}`);
       return true;
     }
     return false;
@@ -158,28 +264,33 @@ class ContentQueueManager {
         segway: null
       };
 
+
       // Generate segways if requested in the pattern or if we have a last played item
       // This allows segways to be generated at the start of playback
-      if (segwayRequested || this.lastPlayedItem) {
+      // IMPORTANT: Only generate segways if this is NOT going to be the last item in the queue
+      // This ensures we know what follows it and prevents duplicate segway generation
+      const willNotBeLastInQueue = this.contentQueue.length < this.maxQueueSize;
+
+      if ((segwayRequested || this.lastPlayedItem) && willNotBeLastInQueue) {
         try {
           // If we have a last played item, use its metadata; otherwise, create a "start" type
-          const prevMeta = this.lastPlayedItem 
-            ? { ...this.lastPlayedItem.meta, type: this.lastPlayedItem.type }
-            : { title: '', type: 'start' };
+          const prevMeta = this.lastPlayedItem
+              ? { ...this.lastPlayedItem.meta, type: this.lastPlayedItem.type }
+              : { title: '', type: 'start' };
           const nextMeta = { ...entry.meta, type };
 
           // Get previous tracks from play history (up to 2 tracks, excluding ads)
           // Only try to get previous tracks if we have a last played item
-          const prevTracks = this.lastPlayedItem 
-            ? getLastPlays(this.historySize)
-                .filter(entry => entry.type !== 'ad' && entry.type !== 'segway')
-                .slice(0, 2)
-                .map(entry => ({
-                  type: entry.type,
-                  meta: entry.meta,
-                  relPath: entry.relPath
-                }))
-            : [];
+          const prevTracks = this.lastPlayedItem
+              ? getLastPlays(this.historySize)
+                  .filter(entry => entry.type !== 'ad' && entry.type !== 'segway')
+                  .slice(0, 2)
+                  .map(entry => ({
+                    type: entry.type,
+                    meta: entry.meta,
+                    relPath: entry.relPath
+                  }))
+              : [];
 
           // Get next tracks from the queue (up to 2 tracks, excluding segways)
           // Include the current track being added and up to 2 tracks from the existing queue
@@ -194,10 +305,10 @@ class ContentQueueManager {
           if (segwayText && segwayText.trim()) {
             // Prepare segway audio using the segwayManager
             const segwayFile = await segwayManager.prepareSegway(
-              segwayText, 
-              prevMeta, 
-              nextMeta, 
-              `${prevMeta.type}_to_${nextMeta.type}`
+                segwayText,
+                prevMeta,
+                nextMeta,
+                `${prevMeta.type}_to_${nextMeta.type}`
             );
 
             if (segwayFile) {
@@ -228,11 +339,14 @@ class ContentQueueManager {
           }
 
           // Clean up old segway files that are no longer needed
-          await segwayManager.removeOldSegways([...this.contentQueue, queueItem]);
+          // Pass null as the currently playing file since ContentQueueManager doesn't know which file is playing
+          await segwayManager.removeOldSegways([...this.contentQueue, queueItem], null);
         } catch (error) {
           console.error('Error generating segway:', error);
           // Continue without a segway if generation fails
         }
+      } else if (!willNotBeLastInQueue && (segwayRequested || this.lastPlayedItem)) {
+        console.log(`Skipping segway generation for ${type} "${entry.meta.title}" as queue is at maximum capacity`);
       }
 
       // Add the item to the queue
@@ -263,7 +377,8 @@ class ContentQueueManager {
   async cleanup() {
     // Clean up segway files that are not in the current queue
     // This preserves segways that are still needed for playback
-    await segwayManager.removeOldSegways(this.contentQueue);
+    // Pass null as the currently playing file since ContentQueueManager doesn't know which file is playing
+    await segwayManager.removeOldSegways(this.contentQueue, null);
 
     // Clear the queue
     this.contentQueue = [];

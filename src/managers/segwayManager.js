@@ -23,7 +23,7 @@ function getConfig() {
                     STATION_CONFIG: config.STATION_CONFIG,
                     READY_DIR: config.READY_DIR
                 };
-                console.log('SegwayManager: Successfully loaded config');
+                //console.log('SegwayManager: Successfully loaded config');
             } else {
                 throw new Error('Config loaded but STATION_CONFIG is missing');
             }
@@ -134,6 +134,42 @@ async function getTrackContext(playbackQueue) {
 }
 
 /**
+ * Check if a segway should be generated for this transition based on config probabilities
+ */
+function shouldGenerateSegway(prevType, nextType) {
+    const STATION_CONFIG = getStationConfig();
+
+    // Check if auto segways are enabled
+    if (!STATION_CONFIG?.schedule?.autoSegways?.enabled) {
+        return false;
+    }
+
+    const transitionKey = `${prevType}->${nextType}`;
+    const chances = STATION_CONFIG.schedule.autoSegways.transitionChances || {};
+    const chance = chances[transitionKey];
+
+    // If no specific chance is defined, default to 0% (no segway)
+    if (chance === undefined) {
+        //console.log(`SegwayManager: No transition chance defined for ${transitionKey}, skipping segway`);
+        return false;
+    }
+
+    // If chance is 0, never generate segway
+    if (chance === 0) {
+        //console.log(`SegwayManager: Transition ${transitionKey} has 0% chance, skipping segway`);
+        return false;
+    }
+
+    const random = Math.random();
+    const shouldGenerate = random < chance;
+
+    //console.log(`SegwayManager: Transition ${transitionKey} chance: ${(chance * 100).toFixed(1)}%, rolled: ${(random * 100).toFixed(1)}%, generate: ${shouldGenerate}`);
+
+    return shouldGenerate;
+}
+
+
+/**
  * Generate a segway between two tracks using OpenAI.
  */
 async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = []) {
@@ -141,7 +177,21 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         // Load config when needed - use the safer helper
         const STATION_CONFIG = getStationConfig();
 
-        console.log('SegwayManager: Config check - stationName:', STATION_CONFIG?.stationName || 'undefined');
+        ///console.log('SegwayManager: Config check - stationName:', STATION_CONFIG?.stationName || 'undefined');
+
+        // Normalize metadata
+        const prevTitle = prevMeta?.title || (prevMeta?.filename ? prevMeta.filename.replace(/\.[^/.]+$/, "") : "previous track");
+        const prevType = prevMeta?.type || "unknown";
+        const nextTitle = nextMeta?.title || (nextMeta?.filename ? nextMeta.filename.replace(/\.[^/.]+$/, "") : "upcoming content");
+        const nextType = nextMeta?.type || "upcoming content";
+
+        // First check if we should generate a segway for this transition
+        if (!shouldGenerateSegway(prevType, nextType)) {
+            //console.log(`SegwayManager: Skipping segway for ${prevType} -> ${nextType} transition`);
+            return null; // Return null to indicate no segway should be generated
+        }
+
+        console.log(`🌀 Generating segway for ${prevType} (${prevTitle}) -> ${nextType} (${nextTitle}) transition`);
 
         // Lazy load modules to avoid circular dependencies
         if (!ratingManager) {
@@ -151,11 +201,6 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             engagementMonitor = require('./engagementMonitor');
         }
 
-        // Normalize metadata
-        const prevTitle = prevMeta?.title || (prevMeta?.filename ? prevMeta.filename.replace(/\.[^/.]+$/, "") : "previous track");
-        const prevType = prevMeta?.type || "unknown";
-        const nextTitle = nextMeta?.title || (nextMeta?.filename ? nextMeta.filename.replace(/\.[^/.]+$/, "") : "upcoming content");
-        const nextType = nextMeta?.type || "upcoming content";
         const includeFunny = Math.random() < (STATION_CONFIG?.segwayFunny ?? 0);
 
         // Process previous tracks array
@@ -273,11 +318,6 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             return fromAdTransitions[Math.floor(Math.random() * fromAdTransitions.length)];
         }
 
-        // For station ID transitions
-        if ((prevType === 'id' || nextType === 'intro' || nextType === 'id')) {
-            return ""; // No segway for id → music or transitions to intro/id
-        }
-
         // For intro → music transitions, announce the upcoming track
         if (prevType === 'intro' && nextType === 'music') {
             return `Up next on ${STATION_CONFIG?.stationName || 'our station'}, ${nextTitle}${nextMeta.artist ? ` by ${nextMeta.artist}` : ''}.`;
@@ -315,7 +355,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                 Respond only with the DJ's spoken words. Limit to 1–2 sentences. Be natural and entertaining.
                 `;
 
-            console.log("Generating music-to-music segway between:", prevTitle, "→", nextTitle);
+            //console.log("Generating music-to-music segway between:", prevTitle, "→", nextTitle);
 
             const openaiClient = new openai.OpenAI({
                 apiKey: process.env.OPENAI_API_KEY
@@ -331,7 +371,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             });
 
             const segwayText = response.choices[0].message.content.trim();
-            console.log("Generated segway text:", segwayText);
+            //console.log("Generated segway text:", segwayText);
             return segwayText;
         }
 
@@ -346,18 +386,19 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
     }
 }
 
+
 /**
  * Generate and save a segway audio file.
  */
 async function prepareSegway(segwayText, prevMeta, nextMeta, key = '') {
     const STATION_CONFIG = getStationConfig();
 
-    console.log('SegwayManager: prepareSegway - Config check - stationName:', STATION_CONFIG?.stationName || 'undefined');
-    console.log('SegwayManager: prepareSegway - Full config check:', {
-        hasConfig: !!STATION_CONFIG,
-        stationName: STATION_CONFIG?.stationName,
-        hasTtsProfiles: !!STATION_CONFIG?.ttsProfiles
-    });
+    //console.log('SegwayManager: prepareSegway - Config check - stationName:', STATION_CONFIG?.stationName || 'undefined');
+    //console.log('SegwayManager: prepareSegway - Full config check:', {
+    //     hasConfig: !!STATION_CONFIG,
+    //     stationName: STATION_CONFIG?.stationName,
+    //     hasTtsProfiles: !!STATION_CONFIG?.ttsProfiles
+    // });
 
     if (!STATION_CONFIG) {
         console.error('SegwayManager: STATION_CONFIG could not be loaded in prepareSegway');
@@ -374,7 +415,7 @@ async function prepareSegway(segwayText, prevMeta, nextMeta, key = '') {
     const segwayFilePath = path.join(getSegwayDir(), segwayFileName);
 
     try {
-        console.log(`SegwayManager: Generating segway audio (type: ${key || 'transition'})...`);
+        //console.log(`SegwayManager: Generating segway audio (type: ${key || 'transition'})...`);
 
         // Prepare metadata for TTS
         const metadata = {
@@ -383,21 +424,21 @@ async function prepareSegway(segwayText, prevMeta, nextMeta, key = '') {
             comment: `Segway from ${prevMeta.type} to ${nextMeta.type}`,
         };
 
-        console.log('SegwayManager: About to call generateTTS with config:', {
-            segwayText: segwayText.substring(0, 50) + '...',
-            filePath: segwayFilePath,
-            metadata,
-            type: "segway",
-            stationConfig: {
-                stationName: STATION_CONFIG.stationName,
-                hasTtsProfiles: !!STATION_CONFIG.ttsProfiles
-            }
-        });
+        // console.log('SegwayManager: About to call generateTTS with config:', {
+        //     segwayText: segwayText.substring(0, 50) + '...',
+        //     filePath: segwayFilePath,
+        //     metadata,
+        //     type: "segway",
+        //     stationConfig: {
+        //         stationName: STATION_CONFIG.stationName,
+        //         hasTtsProfiles: !!STATION_CONFIG.ttsProfiles
+        //     }
+        // });
 
         // Pass the STATION_CONFIG explicitly to avoid circular dependency issues
         await ttsHelper.generateTTS(segwayText, segwayFilePath, metadata, "segway", STATION_CONFIG);
 
-        console.log('SegwayManager: TTS generation completed successfully');
+        //console.log('SegwayManager: TTS generation completed successfully');
         return segwayFilePath;
     } catch (error) {
         console.error(`SegwayManager: Failed to prepare segway: ${error.message}`);
@@ -408,8 +449,9 @@ async function prepareSegway(segwayText, prevMeta, nextMeta, key = '') {
 
 /**
  * Remove old segway files that are no longer needed.
+ * IMPORTANT: Never delete files that are currently being played or about to be played
  */
-async function removeOldSegways(playbackQueue = []) {
+async function removeOldSegways(playbackQueue = [], currentlyPlayingFile = null) {
     try {
         if (!fs.existsSync(getSegwayDir())) {
             fs.mkdirSync(getSegwayDir(), { recursive: true });
@@ -421,31 +463,53 @@ async function removeOldSegways(playbackQueue = []) {
 
         if (segwayFiles.length === 0) return;
 
-        console.log(`SegwayManager: Found ${segwayFiles.length} segway files to check`);
+        //console.log(`SegwayManager: Found ${segwayFiles.length} segway files to check`);
 
         let filesToDelete = [];
         const now = Date.now();
-        const MIN_AGE_MS = 60 * 1000; // 60 seconds
+        const MIN_AGE_MS = 2 * 60 * 1000; // Increased to 2 minutes for safety
 
         for (const segway of segwayFiles) {
             const segwayPath = path.join(getSegwayDir(), segway);
+
+            // CRITICAL: Never delete the currently playing file
+            if (currentlyPlayingFile && segwayPath === currentlyPlayingFile) {
+                console.log(`SegwayManager: 🔒 Protecting currently playing segway: ${segway}`);
+                continue;
+            }
+
             const timestampMatch = segway.match(/segway_.*?_(\d+)\.mp3$/);
             const fileTimestamp = timestampMatch ? parseInt(timestampMatch[1]) : 0;
             const fileAge = now - fileTimestamp;
 
+            // Don't delete recent files
             if (fileAge < MIN_AGE_MS) {
                 continue;
             }
 
+            // Check if file is referenced in the queue
+            let isRelevant = false;
+
             if (playbackQueue.length > 0) {
-                const isRelevant = playbackQueue.some(item =>
+                isRelevant = playbackQueue.some(item =>
                     item.segway && item.segway.filepath === segwayPath
                 );
+            }
 
-                if (!isRelevant) {
-                    filesToDelete.push(segwayPath);
-                }
-            } else {
+            // Also check if any queue item might reference this segway by timestamp
+            if (!isRelevant && playbackQueue.length > 0) {
+                const segwayTimestamp = fileTimestamp;
+                isRelevant = playbackQueue.some(item => {
+                    if (item.segway && item.segway.generated) {
+                        const itemTimestamp = item.segway.generated;
+                        // If timestamps are close (within 10 seconds), consider it relevant
+                        return Math.abs(itemTimestamp - segwayTimestamp) < 10000;
+                    }
+                    return false;
+                });
+            }
+
+            if (!isRelevant) {
                 filesToDelete.push(segwayPath);
             }
         }
@@ -453,6 +517,12 @@ async function removeOldSegways(playbackQueue = []) {
         let deletedCount = 0;
         for (const filePath of filesToDelete) {
             try {
+                // Double-check the file isn't currently being played before deletion
+                if (currentlyPlayingFile && filePath === currentlyPlayingFile) {
+                    console.log(`SegwayManager: 🚫 Skipping deletion of currently playing file: ${filePath}`);
+                    continue;
+                }
+
                 await unlinkAsync(filePath);
                 deletedCount++;
             } catch (err) {
@@ -472,5 +542,6 @@ module.exports = {
     getTrackContext,
     generateSegway,
     prepareSegway,
-    removeOldSegways
+    removeOldSegways,
+    shouldGenerateSegway  // Export this too
 };

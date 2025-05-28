@@ -1,3 +1,4 @@
+
 {
   "stationName": "Radio Arc-Corp",
   "djName": "DJ Quantum",
@@ -10,9 +11,27 @@
   },
   "schedule": {
     "defaultPattern": [
-      "segway", "music", "segway", "music", "ad", "music", "dj",
-      "segway", "music", "segway", "music", "ad", "music", "intro"
-    ]
+      "music", "music", "ad", "music", "dj",
+      "music", "music", "ad", "music", "intro"
+    ],
+    "autoSegways": {
+      "enabled": true,
+      "transitionChances": {
+        "music->music": 0.75,
+        "music->ad": 0.15,
+        "music->dj": 0.85,
+        "ad->music": 0.0,
+        "ad->dj": 0.0,
+        "dj->music": 0.95,
+        "dj->ad": 0.20,
+        "intro->music": 80.0,
+        "intro->dj": 0.0,
+        "intro->ad": 0.0,
+        "music->intro": 0.0,
+        "dj->intro": 0.0,
+        "ad->intro": 0.0
+      }
+    }
   },
   "contentQueue": {
     "minQueueSize": 2,
@@ -56,11 +75,11 @@
       "width": 1920,
       "height": 1080
     },
-    "resizeMode": "height", 
+    "resizeMode": "height",
     "enablePadding": true
   },
   "ratingSystem": {
-    "enabled": true,
+    "enabled": false,
     "defaultRating": 3,
     "minTickets": 1,
     "maxTickets": 5,

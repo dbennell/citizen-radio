@@ -81,8 +81,13 @@ async function pickNextTrack(type) {
 
     // 6) prefer never‑played
     let candidates = available.filter(i => i.count === 0);
-    let choice = await performWeightedSelection(candidates);
+    // If no never-played tracks are available, use all available tracks
+    if (candidates.length === 0) {
+        ///console.log(`No never-played ${type} tracks found, using all available tracks`);
+        candidates = available;
+    }
 
+    let choice = await performWeightedSelection(candidates);
 
     // 7) Check if we have a valid choice
     if (!choice || !choice.fp) {
@@ -130,7 +135,8 @@ async function cleanupSegways(activeQueue = null) {
         }
 
         // Pass the active queue to removeOldSegways to preserve needed segways
-        await segwayManager.removeOldSegways(activeQueue || []);
+        // Pass null as the currently playing file since trackManager doesn't know which file is playing
+        await segwayManager.removeOldSegways(activeQueue || [], null);
     } catch (err) {
         console.error(`Error during segway cleanup: ${err.message}`);
     }
