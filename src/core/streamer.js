@@ -560,6 +560,16 @@ async function streamFile(file) {
       // Handle pipe errors gracefully
       pipeStream = ff.stdout.pipe(ffmpegStdin, { end: false });
 
+      // Increase max listeners for the pipe stream to prevent warnings
+      if (pipeStream && typeof pipeStream.setMaxListeners === 'function') {
+        pipeStream.setMaxListeners(20);
+      }
+
+      // Also increase max listeners for ffmpegStdin to prevent warnings
+      if (ffmpegStdin && typeof ffmpegStdin.setMaxListeners === 'function') {
+        ffmpegStdin.setMaxListeners(20);
+      }
+
       // Use once instead of on to prevent memory leaks
       pipeStream.once('error', (err) => {
         cleanupAndReject(new Error(`Pipe stream error: ${err.message}`));

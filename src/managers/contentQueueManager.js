@@ -101,9 +101,10 @@ class ContentQueueManager {
       return;
     }
 
-    // Only check the first two positions in the queue (index 0 and 1)
-    // as these are the ones that will be played soon
-    const itemsToCheck = Math.min(2, this.contentQueue.length);
+    // Only check the first position in the queue (index 0)
+    // as this is the one that will be played next
+    // This prevents duplicate segway generation for items further in the queue
+    const itemsToCheck = Math.min(1, this.contentQueue.length);
 
     for (let i = 0; i < itemsToCheck; i++) {
       const queueItem = this.contentQueue[i];
@@ -153,7 +154,8 @@ class ContentQueueManager {
             // Attach the segway to the content item
             queueItem.segway = {
               filepath: segwayFile,
-              text: segwayText
+              text: segwayText,
+              generated: Date.now() // Add timestamp to track when this segway was generated
             };
             console.log(`🔄 Generated segway for ${queueItem.type} "${queueItem.meta.title}" at position ${i+1} in queue`);
           }
@@ -164,9 +166,8 @@ class ContentQueueManager {
       }
     }
 
-    // Clean up old segway files that are no longer needed
-    // Pass null as the currently playing file since ContentQueueManager doesn't know which file is playing
-    await segwayManager.removeOldSegways(this.contentQueue, null);
+    // We'll skip cleaning up segways here to prevent premature deletion
+    // Segway cleanup will be handled by the orchestrator which knows the currently playing file
   }
 
   /**
@@ -332,15 +333,15 @@ class ContentQueueManager {
                 // Otherwise, attach the segway to the content item as before
                 queueItem.segway = {
                   filepath: segwayFile,
-                  text: segwayText
+                  text: segwayText,
+                  generated: Date.now() // Add timestamp to track when this segway was generated
                 };
               }
             }
           }
 
-          // Clean up old segway files that are no longer needed
-          // Pass null as the currently playing file since ContentQueueManager doesn't know which file is playing
-          await segwayManager.removeOldSegways([...this.contentQueue, queueItem], null);
+          // We'll skip cleaning up segways here to prevent premature deletion
+          // Segway cleanup will be handled by the orchestrator which knows the currently playing file
         } catch (error) {
           console.error('Error generating segway:', error);
           // Continue without a segway if generation fails
@@ -375,14 +376,12 @@ class ContentQueueManager {
    * Clean up any resources when shutting down
    */
   async cleanup() {
-    // Clean up segway files that are not in the current queue
-    // This preserves segways that are still needed for playback
-    // Pass null as the currently playing file since ContentQueueManager doesn't know which file is playing
-    await segwayManager.removeOldSegways(this.contentQueue, null);
+    // We'll skip cleaning up segways here to prevent accidental deletion
+    // Segway cleanup should be handled by the orchestrator which knows the currently playing file
 
     // Clear the queue
     this.contentQueue = [];
-    console.log('🧹 Content queue cleared and unused segway files cleaned up');
+    console.log('🧹 Content queue cleared');
   }
 }
 
