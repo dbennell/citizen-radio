@@ -12,6 +12,7 @@ const writeFileAsync = util.promisify(fs.writeFile);
  * @param {string} outputPath - The path to save the generated audio file.
  * @param {Object} metadata - Additional metadata (e.g., track title, artist, comments).
  * @param {string} type - Type of the TTS content (e.g., "segway", "dj", "ad").
+ * @param {Object} STATION_CONFIG
  * @returns {Promise<void>}
  */
 // async function generateTTS(text, outputPath, metadata = {}, type = 'unknown') {
@@ -30,7 +31,7 @@ const writeFileAsync = util.promisify(fs.writeFile);
 //     }
 // }
 
-async function generateTTS(text, outputPath, metadata, type) {
+async function generateTTS(text, outputPath, metadata, type, STATION_CONFIG) {
     const voice = STATION_CONFIG.ttsProfiles[type] || "en-US-Wavenet-D";
 
     // Determine language code from voice name
