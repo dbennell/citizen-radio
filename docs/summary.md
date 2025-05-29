@@ -72,20 +72,33 @@
   * Fallback logic for missing content types
 * Injects segways using AI or templated transitions
 * Allows graceful stop/pause control and runtime toggles
-* Honors `station.json` patterns for timing, variety, and vibe
+* Honors `default.json` patterns for timing, variety, and vibe
 
-### 7. **Configuration & Extensibility**
+### 7. **Content Pre-Queuing System**
 
-* Controlled via `station.json`, a human-editable config file defining:
+* Maintains a queue of upcoming tracks to eliminate pauses between content
+* Generates segways in advance while current content is playing
+* Ensures smooth transitions between all content types
+* Automatically replenishes queue as content is consumed
+* Handles edge cases like errors in content selection or segway generation failures
+* Works with all content types (music, ads, DJ segments, etc.)
+
+### 8. **Configuration & Extensibility**
+
+* Controlled via `default.json`, a human-editable config file defining:
   * DJ persona and station branding
   * Playback mix and rotation frequency
   * AI prompt templates
   * TTS voice profiles
+  * Scheduling patterns
+  * Rating system settings
+  * Analytics engine settings
+  * YouTube streaming settings
 * Supports runtime flags and environment variable overrides
 * All audio/image/media organized in structured directories:
   * `prompts/`, `ready/`, `played/`, `temp/`, `archive/`
 
-### 8. **User Ratings & Engagement**
+### 9. **User Ratings & Engagement**
 
 * Collects ratings and comments from YouTube live chat
 * Processes emoji reactions as ratings (1-5 stars)
@@ -95,7 +108,7 @@
 * Analyzes comment sentiment to generate human-readable summaries
 * Stores feedback in both JSON files and MP3 metadata
 
-### 9. **Advanced Track Selection**
+### 10. **Advanced Track Selection**
 
 * Implements procedural mood/energy waves that change over time
 * Uses advanced scoring formula considering:
@@ -106,7 +119,7 @@
 * Allows pattern overrides for special content
 * Uses weighted selection (raffle) based on comprehensive scoring
 
-### 10. **Analytics & Recommendations**
+### 11. **Analytics & Recommendations**
 
 * Processes ratings data to generate insights and trends
 * Provides actionable content recommendations
@@ -120,7 +133,7 @@
 
 | Component                      | Description                                                                                      |
 | ------------------------------ | ------------------------------------------------------------------------------------------------ |
-| `index.js`                     | App entry point; initializes modules, handles signals, keybinds, and temp cleanup                |
+| `main.js`                      | App entry point; initializes modules, handles signals, keybinds, and temp cleanup                |
 | `promptProcessor.js`           | Watches for new prompts, elaborates content, triggers generation (TTS, podcast, segways, images) |
 | `orchestrator.js`              | Main playback loop with type rotation, segway generation, and control signaling                  |
 | `podcastGenerator.js`          | Builds full podcast episodes (from prompt to MP3)                                                |
@@ -130,8 +143,8 @@
 | `trackManager.js`              | Selects next track using play history and usage weighting                                        |
 | `playLogManager.js`            | Logs plays, manages in-memory cache, and supports recent-track queries                           |
 | `streamer.js`                  | Runs FFmpeg pipelines for local audio or YouTube live streaming                                  |
-| `config.js`                    | Loads and merges `station.json` settings, provides path helpers                                  |
-| `station.json`                 | Core configuration defining personality, schedule, TTS, prompts, and streaming                   |
+| `config.js`                    | Loads and merges `default.json` settings, provides path helpers                                  |
+| `default.json`                 | Core configuration defining personality, schedule, TTS, prompts, and streaming                   |
 | `ratingsManager.js`            | Manages per-track feedback, ratings, and sentiment analysis                                      |
 | `analyticsEngine.js`           | Processes ratings data to generate insights and trends                                           |
 | `recommendationSystem.js`      | Provides actionable content recommendations based on analytics                                   |
@@ -140,7 +153,7 @@
 | `moodEnergyManager.js`         | Manages procedural mood/energy waves for track selection                                         |
 | `requestManager.js`            | Handles track requests with priority management                                                  |
 | `overlayManager.js`            | Manages stream overlays including ratings display                                                |
-| `enhancedContentQueueManager.js`| Advanced content queue management with priority handling                                        |
+| `contentQueueManager.js`       | Manages the queue of upcoming content with priority handling                                     |
 | `trackScoring.js`              | Implements advanced track scoring algorithms                                                     |
 | `waveGenerator.js`             | Generates procedural waves for mood/energy matching                                              |
 
@@ -178,11 +191,12 @@
 * CLI overrides and runtime config
 * Play history logs + replay prevention
 * Voice mappings persisted to JSON for continuity
-* Easy-to-edit config in `station.json`
+* Easy-to-edit config in `default.json`
 * Debug/archive modes for prompt processing
 * Comprehensive test suite (unit, integration, e2e, performance)
 * Rating persistence in MP3 metadata
 * Automated error recovery
+* Keyboard shortcuts (Ctrl+X to stop after next track, Ctrl+C to stop immediately)
 
 ---
 
@@ -198,3 +212,31 @@ Ideal for:
 * World-building for interactive fiction and immersive experiences
 
 Its fully modular structure allows new content types, new formats, and deeper integrations with minimal effort—making it as scalable as it is immersive.
+
+---
+
+## 📊 System Requirements
+
+* **Node.js** v16 or higher
+* **FFmpeg** installed and available in PATH
+* **API Keys**:
+  * OpenAI API key for content generation
+  * Google Cloud TTS API key for voice synthesis
+  * YouTube API key for live chat integration
+  * YouTube Stream key for broadcasting
+* **Storage**: At least 1GB free space for content and temporary files
+* **Memory**: Minimum 4GB RAM recommended
+* **Network**: Stable internet connection for API calls and streaming
+
+---
+
+## 🚀 Future Roadmap
+
+* **Enhanced AI Integration**: Support for more advanced AI models and fine-tuning
+* **Voice Customization**: More voice options and custom voice training
+* **Content Variety**: Additional content types and formats
+* **Advanced Analytics**: More detailed listener analytics and insights
+* **Multi-Platform Streaming**: Support for additional streaming platforms
+* **Interactive Features**: More ways for listeners to interact with the station
+* **Automated Content Curation**: Smart content selection based on listener preferences
+* **Localization**: Support for multiple languages and regional content

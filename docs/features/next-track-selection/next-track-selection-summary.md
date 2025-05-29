@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the implementation of the Next Track Selection System as described in the [next-track-selection.md](../features/next-track-selection/next-track-selection.md) documentation. The implementation includes prototype versions of all the major components needed for the system, along with a test script to demonstrate the functionality.
+This document summarizes the implementation of the Next Track Selection System as described in the [next-track-selection.md](next-track-selection.md) documentation. The implementation includes prototype versions of all the major components needed for the system, along with a test script to demonstrate the functionality.
 
 ## Implemented Components
 

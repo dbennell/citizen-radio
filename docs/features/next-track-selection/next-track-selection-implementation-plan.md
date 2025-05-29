@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the action plan to implement the sophisticated track selection system described in the [next-track-selection.md](../features/next-track-selection/next-track-selection.md) documentation. The implementation will transform the current basic track selection logic into a comprehensive system that includes mood/energy waves, advanced scoring, track requests, and pattern overrides.
+This document outlines the action plan to implement the sophisticated track selection system described in the [next-track-selection.md](next-track-selection.md) documentation. The implementation will transform the current basic track selection logic into a comprehensive system that includes mood/energy waves, advanced scoring, track requests, and pattern overrides.
 
 ## Current Implementation
 

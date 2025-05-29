@@ -6,7 +6,7 @@ module.exports = {
   rootDir: '.',
 
   // A list of paths to directories that Jest should use to search for files in
-  roots: ['<rootDir>/tests/working'],
+  roots: ['<rootDir>/tests/unit', '<rootDir>/tests/integration', '<rootDir>/tests/e2e', '<rootDir>/tests/performance'],
 
   // The glob patterns Jest uses to detect test files
   testMatch: [

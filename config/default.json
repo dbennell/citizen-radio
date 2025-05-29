@@ -6,8 +6,7 @@
   "uptimeHours": null,
   "uptimeMode": "track",
   "trackHistory": {
-    "historySize": 20,
-    "weights": { "id": 0, "intro": 0, "ad": 2, "dj": 60, "music": 100 }
+    "historySize": 20
   },
   "schedule": {
     "defaultPattern": [
@@ -34,8 +33,8 @@
     }
   },
   "contentQueue": {
-    "minQueueSize": 2,
-    "maxQueueSize": 4
+    "minQueueSize": 3,
+    "maxQueueSize": 5
   },
   "djOptions": {
     "includePodcasts": true
@@ -89,7 +88,7 @@
     "postTrackWindow": 30
   },
   "analyticsEngine": {
-    "enabled": true,
+    "enabled": false,
     "processingInterval": 3600000,
     "minRatingsThreshold": 3,
     "outlierThreshold": 2,
@@ -97,7 +96,7 @@
     "trendingTimeframe": 7
   },
   "recommendationSystem": {
-    "enabled": true,
+    "enabled": false,
     "confidenceThreshold": 0.7,
     "maxRecommendations": 20,
     "refreshInterval": 86400000
@@ -110,7 +109,7 @@
     "fallbackToFile": true
   },
   "enhancedEngagement": {
-    "enabled": true,
+    "enabled": false,
     "maxStoredComments": 5,
     "commentExpirationMinutes": 30,
     "minSignificanceThreshold": 0.6,
