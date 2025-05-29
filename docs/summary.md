@@ -240,3 +240,7 @@ Its fully modular structure allows new content types, new formats, and deeper in
 * **Interactive Features**: More ways for listeners to interact with the station
 * **Automated Content Curation**: Smart content selection based on listener preferences
 * **Localization**: Support for multiple languages and regional content
+
+---
+
+If you want to help contribute to the Citizen Radio project, see the [contributor guide](contributor-guide.md).

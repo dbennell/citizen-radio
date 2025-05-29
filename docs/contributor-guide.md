@@ -1,6 +1,3 @@
-Absolutely! Here's a clear and friendly **Contributor Guide** tailored for your Citizen Radio project, structured to match your expectations while keeping it approachable for a community-driven effort:
-
----
 
 # 👩‍💻 Citizen Radio – Contributor Guide
 
