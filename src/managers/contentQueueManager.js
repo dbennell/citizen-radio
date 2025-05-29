@@ -92,89 +92,120 @@ class ContentQueueManager {
   }
 
   /**
-   * Check and generate segways for items that have moved up in the queue
-   * This ensures tracks in positions 1 and 2 have segways generated for them
-   * 
-   * NOTE: Disabled to prevent duplicate segway generation since segways are 
-   * already generated during queue replenishment in prepareNextContent()
+   * Check and generate segways for items at a specific position in the queue
+   * This ensures we always have a consistent number of tracks on either side for context
+   * @param {boolean} [forceGeneration=false] - Whether to force segway generation even if one already exists
    */
-  async checkAndGenerateSegwaysForQueueItems() {
-    // DISABLED: This was causing duplicate segway generation
-    // Segways are now only generated during queue replenishment
-    return;
-
+  async generateSegwaysForQueuePosition(forceGeneration = false) {
     // Only process if we have items in the queue and a last played item
     if (this.contentQueue.length === 0 || !this.lastPlayedItem) {
       return;
     }
 
-    // Only check the first position in the queue (index 0)
-    // as this is the one that will be played next
-    // This prevents duplicate segway generation for items further in the queue
-    const itemsToCheck = Math.min(1, this.contentQueue.length);
+    // Always generate segways for position 2 (index 1) if it exists
+    // This ensures we have 2 tracks on either side for context (1 previous, 2 upcoming)
+    const targetPosition = 1; // Position 2 (index 1)
 
-    for (let i = 0; i < itemsToCheck; i++) {
-      const queueItem = this.contentQueue[i];
+    if (this.contentQueue.length <= targetPosition) {
+      // Not enough items in queue to reach target position
+      return;
+    }
 
-      // Skip if item already has a segway or is a segway itself
-      if (queueItem.segway || queueItem.type === 'segway') {
-        continue;
+    const queueItem = this.contentQueue[targetPosition];
+
+    // Skip if item already has a segway or is a segway itself, unless force generation is requested
+    if (!forceGeneration && (queueItem.segway || queueItem.type === 'segway')) {
+      return;
+    }
+
+    // Create a unique key for this transition to prevent duplicates
+    const transitionKey = `${this.lastPlayedItem.type}:${this.lastPlayedItem.meta.title || 'unknown'}->${queueItem.type}:${queueItem.meta.title || 'unknown'}`;
+
+    // Check if we've recently generated a segway for this exact transition
+    if (!this.recentSegways) {
+      this.recentSegways = new Map();
+    }
+
+    const now = Date.now();
+    const recentThreshold = 30000; // 30 seconds
+
+    // Clean up old entries
+    for (const [key, timestamp] of this.recentSegways.entries()) {
+      if (now - timestamp > recentThreshold) {
+        this.recentSegways.delete(key);
       }
+    }
 
-      try {
-        // If we have a last played item, use its metadata; otherwise, create a "start" type
-        const prevMeta = this.lastPlayedItem
-          ? { ...this.lastPlayedItem.meta, type: this.lastPlayedItem.type }
-          : { title: '', type: 'start' };
-        const nextMeta = { ...queueItem.meta, type: queueItem.type };
+    // Check if we've recently generated this transition, unless force generation is requested
+    if (!forceGeneration && this.recentSegways.has(transitionKey)) {
+      console.log(`🔄 Skipping duplicate segway generation for transition: ${transitionKey}`);
+      return;
+    }
 
-        // Get previous tracks from play history (up to 2 tracks, excluding ads)
-        const prevTracks = getLastPlays(this.historySize)
-          .filter(entry => entry.type !== 'ad' && entry.type !== 'segway')
-          .slice(0, 2)
-          .map(entry => ({
-            type: entry.type,
-            meta: entry.meta,
-            relPath: entry.relPath
-          }));
+    try {
+      // If we have a last played item, use its metadata; otherwise, create a "start" type
+      const prevMeta = this.lastPlayedItem
+        ? { ...this.lastPlayedItem.meta, type: this.lastPlayedItem.type }
+        : { title: '', type: 'start' };
+      const nextMeta = { ...queueItem.meta, type: queueItem.type };
 
-        // Get next tracks from the queue (up to 2 tracks, excluding segways)
-        // Start from the current item being checked
-        const nextTracks = [
-          { type: queueItem.type, meta: queueItem.meta, filepath: queueItem.filepath },
-          ...this.contentQueue.slice(i + 1).filter(item => item.type !== 'segway').slice(0, 2)
-        ];
+      // Get previous tracks from play history (up to 2 tracks, excluding ads)
+      const prevTracks = getLastPlays(this.historySize)
+        .filter(entry => entry.type !== 'ad' && entry.type !== 'segway')
+        .slice(0, 2)
+        .map(entry => ({
+          type: entry.type,
+          meta: entry.meta,
+          relPath: entry.relPath
+        }));
 
-        // Generate segway text using the segwayManager
-        const segwayText = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
+      // Get next tracks from the queue (up to 2 tracks, excluding segways)
+      // Start from the target item being checked
+      const nextTracks = [
+        { type: queueItem.type, meta: queueItem.meta, filepath: queueItem.filepath },
+        ...this.contentQueue.slice(targetPosition + 1).filter(item => item.type !== 'segway').slice(0, 2)
+      ];
 
-        if (segwayText && segwayText.trim()) {
-          // Prepare segway audio using the segwayManager
-          const segwayFile = await segwayManager.prepareSegway(
-            segwayText,
-            prevMeta,
-            nextMeta,
-            `${prevMeta.type}_to_${nextMeta.type}`
-          );
+      // Generate segway text using the segwayManager
+      const segwayText = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
 
-          if (segwayFile) {
-            // Attach the segway to the content item
-            queueItem.segway = {
-              filepath: segwayFile,
-              text: segwayText,
-              generated: Date.now() // Add timestamp to track when this segway was generated
-            };
-            console.log(`🔄 Generated segway for ${queueItem.type} "${queueItem.meta.title}" at position ${i+1} in queue`);
-          }
+      if (segwayText && segwayText.trim()) {
+        // Prepare segway audio using the segwayManager
+        const segwayFile = await segwayManager.prepareSegway(
+          segwayText,
+          prevMeta,
+          nextMeta,
+          `${prevMeta.type}_to_${nextMeta.type}`
+        );
+
+        if (segwayFile) {
+          // Mark this transition as recently generated
+          this.recentSegways.set(transitionKey, now);
+
+          // Attach the segway to the content item
+          queueItem.segway = {
+            filepath: segwayFile,
+            text: segwayText,
+            generated: Date.now() // Add timestamp to track when this segway was generated
+          };
+          console.log(`🔄 Generated segway for ${queueItem.type} "${queueItem.meta.title}" at position ${targetPosition+1} in queue`);
         }
-      } catch (error) {
-        console.error(`Error generating segway for queue item at position ${i+1}:`, error);
-        // Continue without a segway if generation fails
       }
+    } catch (error) {
+      console.error(`Error generating segway for queue item at position ${targetPosition+1}:`, error);
+      // Continue without a segway if generation fails
     }
 
     // We'll skip cleaning up segways here to prevent premature deletion
     // Segway cleanup will be handled by the orchestrator which knows the currently playing file
+  }
+
+  /**
+   * Check and generate segways for items that have moved up in the queue
+   * This is a legacy method that now calls the consolidated generateSegwaysForQueuePosition method
+   */
+  async checkAndGenerateSegwaysForQueueItems() {
+    await this.generateSegwaysForQueuePosition();
   }
 
   /**
@@ -272,56 +303,67 @@ class ContentQueueManager {
         segway: null
       };
 
+      // Add the item to the queue
+      const added = this.addItem(queueItem);
 
-      // Generate segways if requested in the pattern or if we have a last played item
-      // This allows segways to be generated at the start of playback
-      // IMPORTANT: Only generate segways if this is NOT going to be the last item in the queue
-      // This ensures we know what follows it and prevents duplicate segway generation
-      const willNotBeLastInQueue = this.contentQueue.length < this.maxQueueSize;
-
-      if ((segwayRequested || this.lastPlayedItem) && willNotBeLastInQueue) {
+      // If a segway was explicitly requested in the pattern, create a separate segway item
+      if (segwayRequested && added && this.lastPlayedItem) {
         try {
-          // If we have a last played item, use its metadata; otherwise, create a "start" type
-          const prevMeta = this.lastPlayedItem
-              ? { ...this.lastPlayedItem.meta, type: this.lastPlayedItem.type }
-              : { title: '', type: 'start' };
+          const prevMeta = { ...this.lastPlayedItem.meta, type: this.lastPlayedItem.type };
           const nextMeta = { ...entry.meta, type };
 
-          // Get previous tracks from play history (up to 2 tracks, excluding ads)
-          // Only try to get previous tracks if we have a last played item
-          const prevTracks = this.lastPlayedItem
-              ? getLastPlays(this.historySize)
-                  .filter(entry => entry.type !== 'ad' && entry.type !== 'segway')
-                  .slice(0, 2)
-                  .map(entry => ({
-                    type: entry.type,
-                    meta: entry.meta,
-                    relPath: entry.relPath
-                  }))
-              : [];
+          // Create a unique key for this transition
+          const transitionKey = `${prevMeta.type}:${prevMeta.title || 'unknown'}->${type}:${entry.meta.title || 'unknown'}`;
 
-          // Get next tracks from the queue (up to 2 tracks, excluding segways)
-          // Include the current track being added and up to 2 tracks from the existing queue
-          const nextTracks = [
-            { type, meta: entry.meta, filepath: entry.filepath },
-            ...this.contentQueue.filter(item => item.type !== 'segway').slice(0, 2)
-          ];
+          // Check if we've recently generated a segway for this exact transition
+          if (!this.recentSegways) {
+            this.recentSegways = new Map();
+          }
 
-          // Generate segway text using the segwayManager
-          const segwayText = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
+          const now = Date.now();
+          const recentThreshold = 30000; // 30 seconds
 
-          if (segwayText && segwayText.trim()) {
-            // Prepare segway audio using the segwayManager
-            const segwayFile = await segwayManager.prepareSegway(
+          // Clean up old entries
+          for (const [key, timestamp] of this.recentSegways.entries()) {
+            if (now - timestamp > recentThreshold) {
+              this.recentSegways.delete(key);
+            }
+          }
+
+          // Check if we've recently generated this transition
+          if (this.recentSegways.has(transitionKey)) {
+            console.log(`🔄 Skipping duplicate segway generation for transition: ${transitionKey}`);
+          } else {
+            // Generate segway text using the segwayManager
+            const prevTracks = getLastPlays(this.historySize)
+              .filter(entry => entry.type !== 'ad' && entry.type !== 'segway')
+              .slice(0, 2)
+              .map(entry => ({
+                type: entry.type,
+                meta: entry.meta,
+                relPath: entry.relPath
+              }));
+
+            const nextTracks = [
+              { type, meta: entry.meta, filepath: entry.filepath },
+              ...this.contentQueue.filter(item => item.type !== 'segway').slice(0, 2)
+            ];
+
+            const segwayText = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
+
+            if (segwayText && segwayText.trim()) {
+              // Prepare segway audio using the segwayManager
+              const segwayFile = await segwayManager.prepareSegway(
                 segwayText,
                 prevMeta,
                 nextMeta,
                 `${prevMeta.type}_to_${nextMeta.type}`
-            );
+              );
 
-            if (segwayFile) {
-              // If a segway was explicitly requested in the pattern, create a separate segway item
-              if (segwayRequested) {
+              if (segwayFile) {
+                // Mark this transition as recently generated
+                this.recentSegways.set(transitionKey, now);
+
                 const segwayItem = {
                   type: 'segway',
                   filepath: segwayFile,
@@ -336,29 +378,19 @@ class ContentQueueManager {
                 // Add the segway as a separate item before the main content
                 this.addItem(segwayItem);
                 console.log(`🔄 Added separate segway to queue before ${type}`);
-              } else {
-                // Otherwise, attach the segway to the content item as before
-                queueItem.segway = {
-                  filepath: segwayFile,
-                  text: segwayText,
-                  generated: Date.now() // Add timestamp to track when this segway was generated
-                };
               }
             }
           }
-
-          // We'll skip cleaning up segways here to prevent premature deletion
-          // Segway cleanup will be handled by the orchestrator which knows the currently playing file
         } catch (error) {
-          console.error('Error generating segway:', error);
+          console.error('Error generating explicit segway:', error);
           // Continue without a segway if generation fails
         }
-      } else if (!willNotBeLastInQueue && (segwayRequested || this.lastPlayedItem)) {
-        console.log(`Skipping segway generation for ${type} "${entry.meta.title}" as queue is at maximum capacity`);
       }
 
-      // Add the item to the queue
-      const added = this.addItem(queueItem);
+      // After adding the item, check if we need to generate segways for position 2
+      if (added && this.contentQueue.length >= 2) {
+        await this.generateSegwaysForQueuePosition();
+      }
 
       // Return true if the item was added successfully
       return added;

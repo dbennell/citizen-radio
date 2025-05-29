@@ -24,7 +24,7 @@
         "ad->dj": 0.0,
         "dj->music": 0.95,
         "dj->ad": 0.20,
-        "intro->music": 80.0,
+        "intro->music": 0.80,
         "intro->dj": 0.0,
         "intro->ad": 0.0,
         "music->intro": 0.0,
