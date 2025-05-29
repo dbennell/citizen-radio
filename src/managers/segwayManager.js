@@ -6,10 +6,27 @@ const fs = require('fs');
 const path = require('path');
 const { promisify } = require('util');
 const { getLastPlays } = require('./playLogManager');
+const crypto = require('crypto');
 
 // More robust config loading with better error handling
 let configCache = null;
 let configLoadAttempted = false;
+
+// Cache for OpenAI API responses to improve performance
+const segwayTextCache = new Map();
+const MAX_SEGWAY_CACHE_SIZE = 100;
+
+// Cache directory for persistent segway text caching
+const SEGWAY_CACHE_DIR = path.join(__dirname, '../../data/cache/segway-text');
+
+// Ensure cache directory exists
+try {
+    if (!fs.existsSync(SEGWAY_CACHE_DIR)) {
+        fs.mkdirSync(SEGWAY_CACHE_DIR, { recursive: true });
+    }
+} catch (err) {
+    console.warn(`SegwayManager: Failed to create cache directory: ${err.message}`);
+}
 
 function getConfig() {
     if (!configCache && !configLoadAttempted) {
@@ -94,16 +111,22 @@ const PLAY_LOG = path.join(__dirname, '../../data/play.log');
 
 /**
  * Get the track context for segway generation by referencing play.log and the queue.
+ * Optimized to read only the last few lines of the play log file.
  */
 async function getTrackContext(playbackQueue) {
     try {
-        // Get last track from play.log
-        const logData = await readFileAsync(PLAY_LOG, 'utf-8');
-        const playHistory = logData.trim().split('\n');
+        // Check if playbackQueue is valid
+        if (!Array.isArray(playbackQueue)) {
+            console.error('SegwayManager: Invalid playbackQueue provided');
+            return null;
+        }
+
+        // Get last tracks from play.log using getLastPlays helper
+        // This is more efficient than reading the entire file
+        const lastPlays = await getLastPlays(5); // Get last 5 plays for context
 
         // Filter out segways from play history
-        const filteredHistory = playHistory
-            .map(line => JSON.parse(line))
+        const filteredHistory = lastPlays
             .filter(entry => entry.type !== 'segway')
             .map(entry => ({
                 type: entry.type,
@@ -111,7 +134,7 @@ async function getTrackContext(playbackQueue) {
                 relPath: entry.relPath
             }));
 
-        const lastPlayed = filteredHistory.length > 0 ? filteredHistory[filteredHistory.length - 1] : null;
+        const lastPlayed = filteredHistory.length > 0 ? filteredHistory[0] : null;
 
         // Get next track from the playback queue
         const nextTrack = playbackQueue.length > 0 ? playbackQueue[0] : null;
@@ -120,7 +143,7 @@ async function getTrackContext(playbackQueue) {
             return {
                 lastTrack: lastPlayed,
                 nextTrack: nextTrack,
-                prevTracks: filteredHistory.slice(-3), // Get up to 3 previous tracks
+                prevTracks: filteredHistory.slice(0, 3), // Get up to 3 previous tracks
                 nextTracks: playbackQueue.slice(0, 3)  // Get up to 3 upcoming tracks
             };
         }
@@ -191,7 +214,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             return null; // Return null to indicate no segway should be generated
         }
 
-        console.log(`🌀 Generating segway for ${prevType} (${prevTitle}) -> ${nextType} (${nextTitle}) transition`);
+        console.log(`🌀 Generating segway to play before ${nextType} (${nextTitle}) after ${prevType} (${prevTitle})`);
 
         // Lazy load modules to avoid circular dependencies
         if (!ratingManager) {
@@ -337,6 +360,36 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
 
         // For music to music transitions (use AI for better variety)
         if (prevType === 'music' && nextType === 'music') {
+            // Create a cache key for segway text caching
+            const cacheKeyData = `${prevTitle}-${prevMeta?.artist || ''}-${nextTitle}-${nextMeta?.artist || ''}-${includeFunny ? 'funny' : 'normal'}`;
+            const cacheKey = crypto.createHash('md5').update(cacheKeyData).digest('hex');
+            const cachePath = path.join(SEGWAY_CACHE_DIR, `${cacheKey}.txt`);
+
+            // Check memory cache first (fastest)
+            if (segwayTextCache.has(cacheKey)) {
+                const cachedText = segwayTextCache.get(cacheKey);
+                console.log(`SegwayManager: Using cached segway text (memory cache)`);
+                return cachedText;
+            }
+
+            // Check disk cache next
+            try {
+                if (fs.existsSync(cachePath)) {
+                    const cachedText = fs.readFileSync(cachePath, 'utf-8');
+                    // Update memory cache
+                    segwayTextCache.set(cacheKey, cachedText);
+                    if (segwayTextCache.size > MAX_SEGWAY_CACHE_SIZE) {
+                        // Remove oldest entry if cache is too large
+                        const oldestKey = segwayTextCache.keys().next().value;
+                        segwayTextCache.delete(oldestKey);
+                    }
+                    console.log(`SegwayManager: Using cached segway text (disk cache)`);
+                    return cachedText;
+                }
+            } catch (cacheErr) {
+                console.warn(`SegwayManager: Cache read error (continuing with API): ${cacheErr.message}`);
+            }
+
             const context = `${STATION_CONFIG?.context || "You are playing the role of a Radio DJ"}. The station, '${STATION_CONFIG?.stationName || "Unknown Station"}', has the vibe of "${STATION_CONFIG?.vibe || "A mainstream popular commercial radio station"}". DJ Name: '${STATION_CONFIG?.djName || "DJ Bob"}'.`;
 
             const basePrompt = STATION_CONFIG?.aiPrompts?.segway || "Write a smooth segway.";
@@ -355,24 +408,73 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                 Respond only with the DJ's spoken words. Limit to 1–2 sentences. Be natural and entertaining.
                 `;
 
-            //console.log("Generating music-to-music segway between:", prevTitle, "→", nextTitle);
+            try {
+                // Create OpenAI client with timeout
+                const openaiClient = new openai.OpenAI({
+                    apiKey: process.env.OPENAI_API_KEY,
+                    timeout: 5000 // 5 second timeout for better responsiveness
+                });
 
-            const openaiClient = new openai.OpenAI({
-                apiKey: process.env.OPENAI_API_KEY
-            });
+                // Set up the API call with a timeout
+                const responsePromise = openaiClient.chat.completions.create({
+                    model: "gpt-4.1-mini", // Consider using a faster model like gpt-3.5-turbo for better performance
+                    messages: [
+                        { role: "system", content: context },
+                        { role: "user", content: userPrompt },
+                    ],
+                    max_tokens: 100,
+                    temperature: 0.7, // Add temperature for more varied responses
+                });
 
-            const response = await openaiClient.chat.completions.create({
-                model: "gpt-4.1-mini",
-                messages: [
-                    { role: "system", content: context },
-                    { role: "user", content: userPrompt },
-                ],
-                max_tokens: 100,
-            });
+                // Add a timeout promise
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error('OpenAI API timeout')), 8000)
+                );
 
-            const segwayText = response.choices[0].message.content.trim();
-            //console.log("Generated segway text:", segwayText);
-            return segwayText;
+                // Race the promises
+                const response = await Promise.race([responsePromise, timeoutPromise]);
+
+                const segwayText = response.choices[0].message.content.trim();
+
+                // Save to cache
+                try {
+                    fs.writeFileSync(cachePath, segwayText, 'utf-8');
+                    segwayTextCache.set(cacheKey, segwayText);
+                    if (segwayTextCache.size > MAX_SEGWAY_CACHE_SIZE) {
+                        // Remove oldest entry if cache is too large
+                        const oldestKey = segwayTextCache.keys().next().value;
+                        segwayTextCache.delete(oldestKey);
+                    }
+                } catch (cacheErr) {
+                    console.warn(`SegwayManager: Cache write error: ${cacheErr.message}`);
+                }
+
+                return segwayText;
+            } catch (error) {
+                console.error(`SegwayManager: OpenAI API error: ${error.message}`);
+
+                // Fallback to template-based segway if API fails
+                const templates = [
+                    `That was ${prevTitle}${prevMeta?.artist ? ` by ${prevMeta.artist}` : ''}. Now, here's ${nextTitle}${nextMeta?.artist ? ` by ${nextMeta.artist}` : ''}.`,
+                    `You just heard ${prevTitle}. Up next, ${nextTitle}.`,
+                    `Let's keep the music going with ${nextTitle} after that great track by ${prevMeta?.artist || 'our previous artist'}.`,
+                    `From ${prevMeta?.artist || 'one artist'} to ${nextMeta?.artist || 'another'}, here's ${nextTitle}.`,
+                    `That was ${prevTitle}. Now switching gears with ${nextTitle}.`
+                ];
+
+                const fallbackText = templates[Math.floor(Math.random() * templates.length)];
+
+                // Even fallback text should be cached to avoid repeated API failures
+                try {
+                    fs.writeFileSync(cachePath, fallbackText, 'utf-8');
+                    segwayTextCache.set(cacheKey, fallbackText);
+                } catch (cacheErr) {
+                    // Just log, don't throw
+                    console.warn(`SegwayManager: Fallback cache write error: ${cacheErr.message}`);
+                }
+
+                return fallbackText;
+            }
         }
 
         // Default fallback
@@ -419,9 +521,9 @@ async function prepareSegway(segwayText, prevMeta, nextMeta, key = '') {
 
         // Prepare metadata for TTS
         const metadata = {
-            title: `${prevMeta.title || "Previous"} -> ${nextMeta.title || "Next"}`,
+            title: `Before ${nextMeta.title || "Next"} after ${prevMeta.title || "Previous"}`,
             artist: STATION_CONFIG?.stationName || 'Unknown Station',
-            comment: `Segway from ${prevMeta.type} to ${nextMeta.type}`,
+            comment: `Segway to play before ${nextMeta.type} after ${prevMeta.type}`,
         };
 
         // console.log('SegwayManager: About to call generateTTS with config:', {
@@ -450,84 +552,116 @@ async function prepareSegway(segwayText, prevMeta, nextMeta, key = '') {
 /**
  * Remove old segway files that are no longer needed.
  * IMPORTANT: Never delete files that are currently being played or about to be played
+ * Optimized for better performance and stability
  */
 async function removeOldSegways(playbackQueue = [], currentlyPlayingFile = null) {
     try {
-        if (!fs.existsSync(getSegwayDir())) {
-            fs.mkdirSync(getSegwayDir(), { recursive: true });
+        // Validate inputs
+        if (!Array.isArray(playbackQueue)) {
+            console.error('SegwayManager: Invalid playbackQueue provided to removeOldSegways');
             return;
         }
 
-        const segwayFiles = fs.readdirSync(getSegwayDir())
-            .filter(file => file.startsWith('segway_') && file.endsWith('.mp3'));
+        const segwayDir = getSegwayDir();
+
+        // Create directory if it doesn't exist
+        if (!fs.existsSync(segwayDir)) {
+            fs.mkdirSync(segwayDir, { recursive: true });
+            return;
+        }
+
+        // Get all segway files
+        const segwayFiles = await fs.promises.readdir(segwayDir)
+            .then(files => files.filter(file => file.startsWith('segway_') && file.endsWith('.mp3')))
+            .catch(err => {
+                console.error(`SegwayManager: Error reading segway directory: ${err.message}`);
+                return [];
+            });
 
         if (segwayFiles.length === 0) return;
 
-        //console.log(`SegwayManager: Found ${segwayFiles.length} segway files to check`);
+        // Create a Set of protected files for faster lookups
+        const protectedFiles = new Set();
+
+        // Add currently playing file to protected set
+        if (currentlyPlayingFile) {
+            protectedFiles.add(currentlyPlayingFile);
+        }
+
+        // Add all files referenced in the queue to protected set
+        if (playbackQueue.length > 0) {
+            // Extract all segway filepaths from the queue
+            playbackQueue.forEach(item => {
+                if (item.segway && item.segway.filepath) {
+                    protectedFiles.add(item.segway.filepath);
+                }
+            });
+
+            // Also protect files that might be referenced by timestamp
+            const now = Date.now();
+            playbackQueue.forEach(item => {
+                if (item.segway && item.segway.generated) {
+                    const itemTimestamp = item.segway.generated;
+                    segwayFiles.forEach(file => {
+                        const timestampMatch = file.match(/segway_.*?_(\d+)\.mp3$/);
+                        if (timestampMatch) {
+                            const fileTimestamp = parseInt(timestampMatch[1]);
+                            // If timestamps are close (within 10 seconds), consider it relevant
+                            if (Math.abs(itemTimestamp - fileTimestamp) < 10000) {
+                                protectedFiles.add(path.join(segwayDir, file));
+                            }
+                        }
+                    });
+                }
+            });
+        }
+
+        // Process files in batches to avoid overwhelming the file system
+        const BATCH_SIZE = 10;
+        const now = Date.now();
+        const MIN_AGE_MS = 2 * 60 * 1000; // 2 minutes for safety
 
         let filesToDelete = [];
-        const now = Date.now();
-        const MIN_AGE_MS = 2 * 60 * 1000; // Increased to 2 minutes for safety
 
-        for (const segway of segwayFiles) {
-            const segwayPath = path.join(getSegwayDir(), segway);
+        // Identify files to delete
+        for (const file of segwayFiles) {
+            const filePath = path.join(segwayDir, file);
 
-            // CRITICAL: Never delete the currently playing file
-            if (currentlyPlayingFile && segwayPath === currentlyPlayingFile) {
-                console.log(`SegwayManager: 🔒 Protecting currently playing segway: ${segway}`);
+            // Skip protected files
+            if (protectedFiles.has(filePath)) {
                 continue;
             }
 
-            const timestampMatch = segway.match(/segway_.*?_(\d+)\.mp3$/);
+            // Check file age
+            const timestampMatch = file.match(/segway_.*?_(\d+)\.mp3$/);
             const fileTimestamp = timestampMatch ? parseInt(timestampMatch[1]) : 0;
             const fileAge = now - fileTimestamp;
 
-            // Don't delete recent files
-            if (fileAge < MIN_AGE_MS) {
-                continue;
-            }
-
-            // Check if file is referenced in the queue
-            let isRelevant = false;
-
-            if (playbackQueue.length > 0) {
-                isRelevant = playbackQueue.some(item =>
-                    item.segway && item.segway.filepath === segwayPath
-                );
-            }
-
-            // Also check if any queue item might reference this segway by timestamp
-            if (!isRelevant && playbackQueue.length > 0) {
-                const segwayTimestamp = fileTimestamp;
-                isRelevant = playbackQueue.some(item => {
-                    if (item.segway && item.segway.generated) {
-                        const itemTimestamp = item.segway.generated;
-                        // If timestamps are close (within 10 seconds), consider it relevant
-                        return Math.abs(itemTimestamp - segwayTimestamp) < 10000;
-                    }
-                    return false;
-                });
-            }
-
-            if (!isRelevant) {
-                filesToDelete.push(segwayPath);
+            // Only delete files older than MIN_AGE_MS
+            if (fileAge >= MIN_AGE_MS) {
+                filesToDelete.push(filePath);
             }
         }
 
+        // Delete files in batches
         let deletedCount = 0;
-        for (const filePath of filesToDelete) {
-            try {
-                // Double-check the file isn't currently being played before deletion
-                if (currentlyPlayingFile && filePath === currentlyPlayingFile) {
-                    console.log(`SegwayManager: 🚫 Skipping deletion of currently playing file: ${filePath}`);
-                    continue;
-                }
+        for (let i = 0; i < filesToDelete.length; i += BATCH_SIZE) {
+            const batch = filesToDelete.slice(i, i + BATCH_SIZE);
 
-                await unlinkAsync(filePath);
-                deletedCount++;
-            } catch (err) {
-                console.error(`Error deleting segway file ${filePath}: ${err.message}`);
-            }
+            // Use Promise.allSettled to handle errors gracefully
+            const results = await Promise.allSettled(
+                batch.map(filePath => unlinkAsync(filePath))
+            );
+
+            // Count successful deletions
+            deletedCount += results.filter(r => r.status === 'fulfilled').length;
+
+            // Log errors but continue
+            results
+                .filter(r => r.status === 'rejected')
+                .forEach((result, index) => {
+                    console.error(`Error deleting segway file ${batch[index]}: ${result.reason.message}`);
+                });
         }
 
         if (deletedCount > 0) {

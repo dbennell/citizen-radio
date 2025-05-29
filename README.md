@@ -226,6 +226,8 @@ npm start --debug
 
 For more detailed technical information, see the [full system summary](docs/summary.md).
 
+Or if you are interested in helping contribute to the project, see the [contributor guide](docs/contributor-guide.md).
+
 ## 📚 Additional Resources
 
 - [Full System Summary](docs/summary.md): Comprehensive technical documentation

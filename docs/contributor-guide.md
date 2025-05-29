@@ -42,6 +42,8 @@ Examples:
 **Optionally** you can also add a new doc in `/docs/changes/` just explaining what you changed and why, expanding on your PR comment if that does not already cover it all
 
 > ℹ️ These changes are easy to roll back—just keep them clean and explain your reasoning.
+ 
+> It might make sense at some later point to place a file limit cap on what can be changed for a single *improvement*
 
 ---
 

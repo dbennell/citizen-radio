@@ -175,7 +175,7 @@ class ContentQueueManager {
           segwayText,
           prevMeta,
           nextMeta,
-          `${prevMeta.type}_to_${nextMeta.type}`
+          `before_${nextMeta.type}_after_${prevMeta.type}`
         );
 
         if (segwayFile) {
@@ -357,7 +357,7 @@ class ContentQueueManager {
                 segwayText,
                 prevMeta,
                 nextMeta,
-                `${prevMeta.type}_to_${nextMeta.type}`
+                `before_${nextMeta.type}_after_${prevMeta.type}`
               );
 
               if (segwayFile) {
@@ -368,9 +368,9 @@ class ContentQueueManager {
                   type: 'segway',
                   filepath: segwayFile,
                   meta: {
-                    title: `Segway: ${prevMeta.title || "Previous"} -> ${nextMeta.title || "Next"}`,
+                    title: `Segway: Before ${nextMeta.title || "Next"} after ${prevMeta.title || "Previous"}`,
                     artist: STATION_CONFIG.stationName,
-                    comment: `Segway from ${prevMeta.type} to ${nextMeta.type}`
+                    comment: `Segway to play before ${nextMeta.type} after ${prevMeta.type}`
                   },
                   segway: null
                 };
