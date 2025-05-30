@@ -76,13 +76,6 @@ touch .env
 
 Add your API keys:
 
-For a minimal local test install
-```
-# OpenAI API Key
-OPENAI_API_KEY=your_openai_api_key
-```
-
-For a standard install
 ```
 # OpenAI API Key
 OPENAI_API_KEY=your_openai_api_key
