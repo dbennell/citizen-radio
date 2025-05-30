@@ -13,7 +13,7 @@
   * DJ talk segments
   * In-universe advertisements
   * Station IDs
-  * Segways (transitions)
+  * Segues (transitions)
   * Multi-character podcast scripts
 * Expands short prompts into fully elaborated text with contextual awareness of the station's theme, DJ, and vibe
 * Uses flexible, type-specific AI prompt templates
@@ -59,7 +59,7 @@
 * Streams to **YouTube Live (RTMP)** with rotating visual overlays
 * Handles:
   * Music playback
-  * Segways
+  * Segues
   * Voice segments
   * Podcast episodes
 * Operates in local playback or stream mode with seamless switching
@@ -70,17 +70,17 @@
   * Scheduling config
   * Weighted history (to avoid repetition)
   * Fallback logic for missing content types
-* Injects segways using AI or templated transitions
+* Injects segues using AI or templated transitions
 * Allows graceful stop/pause control and runtime toggles
 * Honors `default.json` patterns for timing, variety, and vibe
 
 ### 7. **Content Pre-Queuing System**
 
 * Maintains a queue of upcoming tracks to eliminate pauses between content
-* Generates segways in advance while current content is playing
+* Generates segues in advance while current content is playing
 * Ensures smooth transitions between all content types
 * Automatically replenishes queue as content is consumed
-* Handles edge cases like errors in content selection or segway generation failures
+* Handles edge cases like errors in content selection or segue generation failures
 * Works with all content types (music, ads, DJ segments, etc.)
 
 ### 8. **Configuration & Extensibility**
@@ -104,7 +104,7 @@
 * Processes emoji reactions as ratings (1-5 stars)
 * Displays feedback in the stream overlay
 * Updates MP3 metadata with aggregated ratings
-* Enables DJs to reference listener feedback during segways
+* Enables DJs to reference listener feedback during segues
 * Analyzes comment sentiment to generate human-readable summaries
 * Stores feedback in both JSON files and MP3 metadata
 
@@ -134,8 +134,8 @@
 | Component                      | Description                                                                                      |
 | ------------------------------ | ------------------------------------------------------------------------------------------------ |
 | `main.js`                      | App entry point; initializes modules, handles signals, keybinds, and temp cleanup                |
-| `promptProcessor.js`           | Watches for new prompts, elaborates content, triggers generation (TTS, podcast, segways, images) |
-| `orchestrator.js`              | Main playback loop with type rotation, segway generation, and control signaling                  |
+| `promptProcessor.js`           | Watches for new prompts, elaborates content, triggers generation (TTS, podcast, segues, images) |
+| `orchestrator.js`              | Main playback loop with type rotation, segue generation, and control signaling                  |
 | `podcastGenerator.js`          | Builds full podcast episodes (from prompt to MP3)                                                |
 | `podcastParser.js`             | Parses podcast scripts and extracts participant metadata                                         |
 | `audioSynthesizer.js`          | Handles voice synthesis (TTS) and MP3 stitching with transitions                                 |
@@ -148,7 +148,7 @@
 | `ratingsManager.js`            | Manages per-track feedback, ratings, and sentiment analysis                                      |
 | `analyticsEngine.js`           | Processes ratings data to generate insights and trends                                           |
 | `recommendationSystem.js`      | Provides actionable content recommendations based on analytics                                   |
-| `engagementMonitor.js`         | Monitors chat for noteworthy comments to reference in segways                                    |
+| `engagementMonitor.js`         | Monitors chat for noteworthy comments to reference in segues                                    |
 | `sentimentAnalyzer.js`         | Analyzes comment sentiment to generate human-readable summaries                                  |
 | `moodEnergyManager.js`         | Manages procedural mood/energy waves for track selection                                         |
 | `requestManager.js`            | Handles track requests with priority management                                                  |
@@ -165,7 +165,7 @@
 * **DJ Segments** – Generated station banter and transitions
 * **Advertisements** – Fictional, lore-appropriate ad spots
 * **Station IDs** – Short branded identifiers for continuity
-* **Segways** – Audio transitions generated via AI or templates
+* **Segues** – Audio transitions generated via AI or templates
 * **Podcasts** – Full talk show-style segments with multiple characters
 * **Images** – Used as visual overlays for streaming platforms
 * **User Feedback** – Ratings and comments from listeners
@@ -175,7 +175,7 @@
 
 ## 🧩 Integration Points
 
-* **OpenAI API** – For AI-driven script, segway, and image generation
+* **OpenAI API** – For AI-driven script, segue, and image generation
 * **Google Cloud TTS** – For realistic, diverse voice synthesis
 * **FFmpeg** – Audio stitching and live RTMP streaming
 * **YouTube** – Output destination for 24/7 in-universe broadcast

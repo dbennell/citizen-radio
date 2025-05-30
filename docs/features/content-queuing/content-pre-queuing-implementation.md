@@ -229,11 +229,11 @@ async function playbackLoop() {
         if (uptimeMs !== null) {
             const elapsed = Date.now() - startTime;
             if (STATION_CONFIG.uptimeMode === 'cycle' && elapsed >= uptimeMs) {
-                console.log('🛑 Uptime reached: ending cycle');
+                console.log('⏹️ Uptime reached: ending cycle');
                 break;
             }
             if (STATION_CONFIG.uptimeMode === 'track' && elapsed >= uptimeMs) {
-                console.log('🛑 Uptime reached: stopping after next track');
+                console.log('⏹️ Uptime reached: stopping after next track');
                 stopAfterNextMusic = true;
             }
         }
@@ -324,7 +324,7 @@ async function playbackLoop() {
 
         // Check if we should stop after music
         if (stopAfterNextMusic && queueItem.type === 'music') {
-            console.log('🛑 Stopping after this music track.');
+            console.log('⏹️ Stopping after this music track.');
             shouldStop = true;
             break;
         }

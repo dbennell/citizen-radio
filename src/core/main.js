@@ -18,7 +18,7 @@ let metadataUpdateInterval;
 
 
 function cleanup() {
-    console.log('🛑 Cleaning up... Stopping playback and processes.');
+    console.log('⏹️ Cleaning up... Stopping playback and processes.');
 
     // Create a promise to track cleanup completion
     const cleanupPromise = new Promise(async (resolve) => {
@@ -30,7 +30,7 @@ function cleanup() {
             try {
                 const stdin = getFfmpegStdin();
                 if (stdin) {
-                    console.log('🛑 Closing FFmpeg stdin...');
+                    console.log('⏹️ Closing FFmpeg stdin...');
                     stdin.end();
                 }
             } catch (stdinErr) {
@@ -75,7 +75,7 @@ function cleanup() {
 
     // Wait for cleanup to complete before exiting
     cleanupPromise.then(() => {
-        console.log('✅ Cleanup complete. Exiting...');
+        console.log('👋 Cleanup complete. Exiting...');
         process.exit(0);
     }).catch(err => {
         console.error('⚠️ Cleanup failed:', err.message);

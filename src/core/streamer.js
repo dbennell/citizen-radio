@@ -691,7 +691,7 @@ async function streamFile(file) {
  * @returns {Promise} A promise that resolves when the YouTube streamer has been stopped
  */
 function stopYouTubeStreamer() {
-  console.log("🛑 Stopping YouTube streamer...");
+  console.log("⏹️ Stopping YouTube streamer...");
 
   // Track if we've started cleanup
   let cleanupStarted = false;
@@ -704,7 +704,7 @@ function stopYouTubeStreamer() {
       cleanupStarted = true;
 
       if (youtubeProc && !youtubeProc.killed) {
-        console.log(`🛑 Killing YouTube streamer process: PID ${youtubeProc.pid}`);
+        console.log(`⏹️ Killing YouTube streamer process: PID ${youtubeProc.pid}`);
         try {
           youtubeProc.kill("SIGINT");
         } catch (err) {
@@ -714,7 +714,7 @@ function stopYouTubeStreamer() {
       }
 
       if (ffmpegStdin) {
-        console.log("🛑 Closing FFmpeg stdin...");
+        console.log("⏹️ Closing FFmpeg stdin...");
         try {
           ffmpegStdin.end();
         } catch (err) {
