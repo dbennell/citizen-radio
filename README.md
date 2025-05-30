@@ -81,7 +81,7 @@ Add your API keys:
 OPENAI_API_KEY=your_openai_api_key
 
 # Googles TTS service 
-GOOGLE_APPLICATION_CREDENTIALS=your_google_tts_key
+GOOGLE_APPLICATION_CREDENTIALS=your_google_auth_key.json
 
 # YouTube streaming settings
 YOUTUBE_STREAM_KEY=your_youtube_stream_key 

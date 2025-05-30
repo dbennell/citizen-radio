@@ -1,4 +1,4 @@
-const { readJsonFile } = require('./src/utils/fileUtils');
+const { readJsonFile } = require('../src/utils/fileUtils');
 
 async function testRatingsLogFix() {
     console.log('Testing fix for ratings.log parsing issue...');

@@ -59,24 +59,30 @@ async function pickNextTrack(type) {
     );
 
     // 5) exclude already queued duplicates (any type)
+    let queuedTracks = [];
     try {
         const orchestrator = require('../core/orchestrator');
         const contentQueueManager = orchestrator.getContentQueue();
 
         if (contentQueueManager && contentQueueManager.contentQueue) {
-            const queuedTracks = contentQueueManager.contentQueue;
-
-            // Filter out tracks that are already in the queue
-            available = available.filter(item =>
-                !queuedTracks.some(queueItem => {
-                    // Get the relative path of the queued item for comparison
-                    const queuedRelPath = queueItem.meta && queueItem.meta.relPath;
-                    return queuedRelPath === item.rel;
-                })
-            );
+            queuedTracks = contentQueueManager.contentQueue;
         }
     } catch (err) {
-        console.log('Unable to filter out queued tracks:', err.message);
+        console.log('Unable to get content queue:', err.message);
+        // Continue with empty queuedTracks array
+    }
+
+    // Even if there was an error, we still try to filter with whatever we have
+    if (queuedTracks.length > 0) {
+        // Filter out tracks that are already in the queue
+        available = available.filter(item =>
+            !queuedTracks.some(queueItem => {
+                // Get the relative path of the queued item for comparison
+                const queuedRelPath = queueItem.meta && queueItem.meta.relPath;
+                return queuedRelPath === item.rel;
+            })
+        );
+        console.log(`Filtered out ${queuedTracks.length} queued tracks from selection pool`);
     }
 
     // 6) prefer never‑played
@@ -165,12 +171,45 @@ async function performWeightedSelection(candidates) {
         // Get rating asynchronously
         const rating = await ratingManager.getRatingForTrack(candidate.rel) ||
             STATION_CONFIG.ratingSystem.defaultRating;
-        // Ensure each track gets at least 1 ticket, even with low ratings
-        const tickets = Math.max(1, ratingManager.getTicketsForTrack(rating));
+
+        // Get base tickets from rating
+        let tickets = Math.max(1, ratingManager.getTicketsForTrack(rating));
+
+        // Apply frequency bias - reduce tickets for frequently played tracks
+        // The play count is already in the candidate object
+        const playCount = candidate.count || 0;
+
+        // Get frequency weights from config or use defaults
+        const frequencyWeight = STATION_CONFIG.trackHistory?.weights?.frequency || 0.5;
+
+        // Apply frequency penalty: more plays = fewer tickets
+        // Use a progressive penalty that increases with play count
+        // This ensures tracks with higher play counts are penalized more heavily
+        if (playCount > 0 && frequencyWeight > 0) {
+            // Progressive penalty: penalty increases with play count
+            // Use a more aggressive formula to ensure higher play counts are penalized more
+            const progressivePenalty = Math.pow(playCount, 2) * frequencyWeight;
+
+            // Calculate tickets with a formula that ensures tracks with higher play counts
+            // always get fewer tickets, even if they're all below the minimum threshold
+            // Use a formula that approaches but never reaches zero as play count increases
+            tickets = tickets / (1 + progressivePenalty);
+
+            // Ensure a minimum of 0.01 tickets
+            tickets = Math.max(0.01, tickets);
+
+            if (tickets < 1) {
+                console.log(`Track "${candidate.rel}" has very high play count (${playCount}), reduced to ${tickets.toFixed(2)} tickets`);
+            } else {
+                console.log(`Track "${candidate.rel}" has play count ${playCount}, tickets reduced to ${tickets.toFixed(2)}`);
+            }
+        }
+
         candidatesWithRatings.push({
             ...candidate,
             rating,
-            tickets
+            tickets,
+            playCount
         });
     }
 

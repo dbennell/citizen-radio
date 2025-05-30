@@ -1,276 +1,100 @@
-/**
- * Test Script for Enhanced Track Selection System
- * 
- * This script demonstrates the enhanced track selection system by:
- * 1. Initializing the mood/energy waves
- * 2. Loading available tracks
- * 3. Scoring and selecting tracks based on the current mood/energy
- * 4. Simulating track requests and priority content
- * 5. Visualizing the selection process
- */
-
-const path = require('path');
-const fs = require('fs');
-const chalk = require('chalk');
-
-// Import components
-const moodEnergyManager = require('../src/managers/moodEnergyManager');
-const trackScoring = require('../src/utils/trackScoring');
-const requestManager = require('../src/managers/requestManager');
-const EnhancedContentQueueManager = require('../src/managers/enhancedContentQueueManager');
-const { STATION_CONFIG } = require('../src/core/config');
+const { pickNextTrack, performWeightedSelection } = require('../src/managers/trackManager');
 const { getLastPlays } = require('../src/managers/playLogManager');
-const { extractMetadata } = require('../src/utils');
+const { STATION_CONFIG } = require('../src/core/config');
 
-// Configuration
-const TEST_CONFIG = {
-  contentDir: path.join(__dirname, '../ready'),
-  trackType: 'music',
-  numTracksToSelect: 5,
-  simulateRequest: true,
-  simulatePriorityContent: true,
-  visualizeWaves: true
-};
+console.log('Testing track selection with frequency bias...');
+console.log('Current configuration:');
+console.log(`- Track history size: ${STATION_CONFIG.trackHistory?.historySize || 16}`);
+console.log(`- Frequency weight: ${STATION_CONFIG.trackHistory?.weights?.frequency || 0.5}`);
+console.log(`- Default rating: ${STATION_CONFIG.ratingSystem?.defaultRating || 3}`);
+console.log(`- Min tickets: ${STATION_CONFIG.ratingSystem?.minTickets || 1}`);
+console.log(`- Max tickets: ${STATION_CONFIG.ratingSystem?.maxTickets || 5}`);
 
-/**
- * Get all tracks of a specific type
- */
-async function getAllTracksOfType(type) {
-  const dir = path.join(TEST_CONFIG.contentDir, type);
+// Create mock candidates with different play counts
+const mockCandidates = [
+  { fp: '/path/to/track1.mp3', rel: 'music/track1.mp3', count: 0 },  // Never played
+  { fp: '/path/to/track2.mp3', rel: 'music/track2.mp3', count: 1 },  // Played once
+  { fp: '/path/to/track3.mp3', rel: 'music/track3.mp3', count: 3 },  // Played 3 times
+  { fp: '/path/to/track4.mp3', rel: 'music/track4.mp3', count: 5 },  // Played 5 times
+  { fp: '/path/to/track5.mp3', rel: 'music/track5.mp3', count: 10 }, // Played 10 times
+];
 
-  if (!fs.existsSync(dir)) {
-    console.error(chalk.red(`Directory not found: ${dir}`));
-    return [];
-  }
+// Test the weighted selection
+async function testWeightedSelection() {
+  console.log('\nTesting weighted selection with frequency bias:');
 
-  // Get all MP3 files in the directory
-  const files = fs.readdirSync(dir)
-    .filter(f => f.endsWith('.mp3'))
-    .map(f => path.join(dir, f));
+  // First, log the ticket calculations for each track
+  console.log('\nTicket calculations for each track:');
+  for (const candidate of mockCandidates) {
+    // Calculate tickets manually to verify
+    const rating = 3; // Default rating
+    let baseTickets = Math.max(1, rating);
+    const playCount = candidate.count || 0;
+    const frequencyWeight = 0.5; // Default weight
 
-  if (files.length === 0) {
-    console.error(chalk.red(`No ${type} files found in ${dir}`));
-    return [];
-  }
-
-  console.log(chalk.blue(`Found ${files.length} ${type} files`));
-
-  // Get play history for play count
-  const playLog = getLastPlays(100);
-
-  // Process each file to get metadata and play count
-  const tracks = await Promise.all(files.map(async (filepath) => {
-    try {
-      // Extract metadata
-      const meta = await extractMetadata(filepath) || {};
-
-      // Get relative path for play count lookup
-      const relPath = path.relative(TEST_CONFIG.contentDir, filepath);
-
-      // Count plays in history
-      const playCount = playLog.filter(entry => entry.relPath === relPath).length;
-
-      // Get last played time
-      const lastPlayEntry = playLog.find(entry => entry.relPath === relPath);
-      const lastPlayed = lastPlayEntry ? new Date(lastPlayEntry.timestamp) : null;
-
-      // Return track with metadata
-      return {
-        filepath,
-        relPath,
-        title: meta.title || path.basename(filepath),
-        artist: meta.artist || 'Unknown',
-        mood: meta.mood || Math.floor(Math.random() * 10) + 1, // Random mood if not available
-        energy: meta.energy || Math.floor(Math.random() * 10) + 1, // Random energy if not available
-        averageRating: meta.averageRating || 3, // Default rating
-        playCount,
-        lastPlayed,
-        ...(meta || {})
-      };
-    } catch (error) {
-      console.error(chalk.red(`Error processing ${filepath}:`, error));
-      return null;
+    // Calculate progressive penalty
+    let tickets = baseTickets;
+    if (playCount > 0 && frequencyWeight > 0) {
+      const progressivePenalty = Math.pow(playCount, 2) * frequencyWeight;
+      // Use a formula that approaches but never reaches zero as play count increases
+      tickets = tickets / (1 + progressivePenalty);
+      // Ensure a minimum of 0.01 tickets
+      tickets = Math.max(0.01, tickets);
     }
-  }));
 
-  // Filter out null entries
-  return tracks.filter(track => track !== null);
-}
-
-/**
- * Simulate a track request
- */
-async function simulateTrackRequest(tracks) {
-  if (!tracks || tracks.length === 0) return null;
-
-  // Pick a random track
-  const track = tracks[Math.floor(Math.random() * tracks.length)];
-
-  console.log(chalk.yellow(`\nSimulating request for "${track.title}" by ${track.artist}`));
-
-  // Request the track
-  const result = await requestManager.requestTrack({
-    trackPath: track.filepath,
-    requester: 'Test Script',
-    priority: 2,
-    immediate: Math.random() > 0.7 // 30% chance of immediate request
-  });
-
-  if (result.success) {
-    console.log(chalk.green(`Request added: ${result.message}`));
-    return result.request;
-  } else {
-    console.error(chalk.red(`Request failed: ${result.message}`));
-    return null;
-  }
-}
-
-/**
- * Simulate priority content
- */
-async function simulatePriorityContent(tracks) {
-  if (!tracks || tracks.length === 0) return null;
-
-  // Pick a random track
-  const track = tracks[Math.floor(Math.random() * tracks.length)];
-
-  console.log(chalk.yellow(`\nSimulating priority content: "${track.title}" by ${track.artist}`));
-
-  // Set as priority content
-  const success = await requestManager.setPriorityContent({
-    trackPath: track.filepath,
-    type: 'priority',
-    duration: 5 * 60 * 1000 // 5 minutes
-  });
-
-  if (success) {
-    console.log(chalk.green('Priority content set successfully'));
-    return requestManager.getPriorityContent();
-  } else {
-    console.error(chalk.red('Failed to set priority content'));
-    return null;
-  }
-}
-
-/**
- * Print track details with scoring information
- */
-function printTrackDetails(track, index) {
-  const title = chalk.bold(track.title);
-  const artist = chalk.italic(track.artist || 'Unknown');
-  const score = track.score !== undefined ? 
-    chalk.yellow(`Score: ${track.score.toFixed(2)}`) : '';
-
-  console.log(`${index + 1}. ${title} by ${artist} ${score}`);
-
-  if (track.scoreComponents) {
-    const components = track.scoreComponents;
-    console.log(`   Rating: ${components.ratingScore.toFixed(2)}, ` +
-      `Frequency: ${components.frequencyScore.toFixed(2)}, ` +
-      `Wave Fit: ${components.waveFit.toFixed(2)}`);
+    console.log(`Track: ${candidate.rel}, Play count: ${playCount}, Base tickets: ${baseTickets}, Final tickets: ${tickets.toFixed(2)}`);
   }
 
-  if (track.mood && track.energy) {
-    console.log(`   Mood: ${track.mood.toFixed(1)}, Energy: ${track.energy.toFixed(1)}`);
-  }
+  // Run multiple selections to see the distribution
+  const selections = {};
+  const iterations = 1000;
 
-  if (track.playCount !== undefined) {
-    console.log(`   Play Count: ${track.playCount}, ` +
-      `Last Played: ${track.lastPlayed ? track.lastPlayed.toLocaleString() : 'Never'}`);
-  }
-}
-
-/**
- * Main test function
- */
-async function runTest() {
-  console.log(chalk.bold.blue('=== Enhanced Track Selection System Test ===\n'));
-
-  // 1. Initialize mood/energy waves
-  console.log(chalk.bold('Current Mood/Energy State:'));
-  const currentMood = moodEnergyManager.getCurrentMood();
-  const currentEnergy = moodEnergyManager.getCurrentEnergy();
-  const stateDesc = moodEnergyManager.getCurrentStateDescription();
-
-  console.log(`Mood: ${currentMood.toFixed(1)}, Energy: ${currentEnergy.toFixed(1)}`);
-  console.log(`Description: ${stateDesc}`);
-
-  if (TEST_CONFIG.visualizeWaves) {
-    console.log('\nMood Wave (next hour):');
-    console.log(moodEnergyManager.moodWave.visualize());
-    console.log('\nEnergy Wave (next hour):');
-    console.log(moodEnergyManager.energyWave.visualize());
-  }
-
-  // 2. Load available tracks
-  console.log(chalk.bold('\nLoading Tracks:'));
-  const tracks = await getAllTracksOfType(TEST_CONFIG.trackType);
-
-  if (tracks.length === 0) {
-    console.error(chalk.red('No tracks available for testing'));
-    return;
-  }
-
-  console.log(chalk.green(`Loaded ${tracks.length} tracks`));
-
-  // 3. Score and select tracks
-  console.log(chalk.bold('\nScoring Tracks:'));
-  const playLog = getLastPlays(20);
-
-  // Filter out excluded tracks
-  const availableTracks = trackScoring.filterExcludedTracks(tracks, playLog);
-  console.log(`${availableTracks.length} tracks available after exclusion filter`);
-
-  // Score tracks
-  const scoredTracks = trackScoring.scoreAndSortTracks(availableTracks);
-
-  console.log(chalk.bold('\nTop Scored Tracks:'));
-  scoredTracks.slice(0, TEST_CONFIG.numTracksToSelect).forEach(printTrackDetails);
-
-  // 4. Simulate track request
-  if (TEST_CONFIG.simulateRequest) {
-    await simulateTrackRequest(tracks);
-  }
-
-  // 5. Simulate priority content
-  if (TEST_CONFIG.simulatePriorityContent) {
-    await simulatePriorityContent(tracks);
-  }
-
-  // 6. Initialize enhanced content queue manager
-  console.log(chalk.bold('\nInitializing Enhanced Content Queue Manager:'));
-  const queueManager = new EnhancedContentQueueManager({
-    trackSelectionConfig: {
-      enabled: true,
-      moodEnergyEnabled: true,
-      requestsEnabled: true
+  for (let i = 0; i < iterations; i++) {
+    const selected = await performWeightedSelection(mockCandidates);
+    if (selected) {
+      const trackName = selected.rel;
+      selections[trackName] = (selections[trackName] || 0) + 1;
     }
+  }
+
+  // Display results
+  console.log(`\nSelection results after ${iterations} iterations:`);
+  for (const trackName in selections) {
+    const percentage = ((selections[trackName] / iterations) * 100).toFixed(2);
+    console.log(`- ${trackName}: ${selections[trackName]} selections (${percentage}%)`);
+  }
+
+  // Check if tracks with higher play counts were selected less frequently
+  const tracksByPlayCount = Object.keys(selections).sort((a, b) => {
+    const trackA = mockCandidates.find(c => c.rel === a);
+    const trackB = mockCandidates.find(c => c.rel === b);
+    return trackA.count - trackB.count;
   });
 
-  await queueManager.initialize();
+  console.log('\nVerifying frequency bias:');
+  for (let i = 0; i < tracksByPlayCount.length - 1; i++) {
+    const currentTrack = tracksByPlayCount[i];
+    const nextTrack = tracksByPlayCount[i + 1];
+    const currentCount = mockCandidates.find(c => c.rel === currentTrack).count;
+    const nextCount = mockCandidates.find(c => c.rel === nextTrack).count;
 
-  // 7. Get next items from queue
-  console.log(chalk.bold('\nNext Items in Queue:'));
-  for (let i = 0; i < TEST_CONFIG.numTracksToSelect; i++) {
-    const item = queueManager.getNextItem();
-    if (item) {
-      console.log(`\n${i + 1}. ${chalk.bold(item.meta.title)} by ${chalk.italic(item.meta.artist || 'Unknown')} (${item.type})`);
-
-      if (item.segue) {
-        console.log(chalk.gray(`   Segue: ${item.segue.text.substring(0, 100)}...`));
-      }
+    if (selections[currentTrack] <= selections[nextTrack]) {
+      console.log(`❌ ISSUE: Track with play count ${currentCount} (${currentTrack}) was selected ${selections[currentTrack]} times, but track with higher play count ${nextCount} (${nextTrack}) was selected ${selections[nextTrack]} times`);
     } else {
-      console.log(`${i + 1}. No more items in queue`);
-      break;
+      console.log(`✅ Track with play count ${currentCount} (${currentTrack}) was selected more often (${selections[currentTrack]} times) than track with play count ${nextCount} (${nextTrack}) (${selections[nextTrack]} times)`);
     }
   }
 
-  // Clean up
-  queueManager.cleanup();
-  console.log(chalk.bold.green('\nTest completed successfully'));
+  // Check recent play history
+  console.log('\nChecking recent play history:');
+  const playLog = getLastPlays(20);
+  console.log(`Recent play history (last ${playLog.length} tracks):`);
+  playLog.forEach((entry, index) => {
+    console.log(`${index + 1}. ${entry.relPath || 'unknown'} (${entry.type || 'unknown'})`);
+  });
 }
 
 // Run the test
-runTest().catch(error => {
-  console.error(chalk.bold.red('Test failed with error:'), error);
+testWeightedSelection().catch(err => {
+  console.error('Error during test:', err);
 });
