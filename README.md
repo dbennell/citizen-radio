@@ -20,53 +20,106 @@ The system runs 24/7 without human intervention, creating a compelling and dynam
 - **Analytics & Recommendations**: Processes user feedback to improve content selection
 - **Automated Error Recovery**: Self-heals from common streaming and API issues
 
-## 🚀 Quick Start Guide
+## 🚀 Quick Start (New Users)
 
-### Prerequisites
-- Node.js v16 or higher
-- FFmpeg installed and in your PATH
-- API keys for OpenAI and Google Cloud Text-to-Speech
-- YouTube account with live streaming enabled
-- Youtube API key if you want to capture feedback the stream chat
+### ✅ Requirements
 
-### Installation
-1. **Clone and Install Dependencies**
-   ```bash
-   git clone https://github.com/yourusername/citizen-radio.git
-   cd citizen-radio
-   npm install
-   ```
+* Ubuntu 22.04+ (Ubuntu 24.10 may have unstable repos)
+* **Node.js v16+**
+* **FFmpeg** (must be in your PATH)
+* **API keys** for:
 
-2. **Set Up Environment Variables**
-   Create a `.env` file in the project root:
-   ```
-   OPENAI_API_KEY=your_openai_api_key_here
-   GOOGLE_TTS_API_KEY=your_google_tts_api_key_here
-   YOUTUBE_STREAM_KEY=your_youtube_stream_key_here
-   YOUTUBE_API_KEY=your_youtube_api_key_here
-   ```
+   * [OpenAI](https://platform.openai.com/)
+   * [Google Cloud Text-to-Speech](https://cloud.google.com/text-to-speech)
+   * [YouTube API](https://console.cloud.google.com/apis)
+   * **YouTube streaming enabled** on your account
 
-3. **Add Content or Use Examples**
-   ```bash
-   # Copy example content to get started quickly
-   cp -r example/* data/
-   ```
 
-   Or add your own:
-   - Place MP3 files in `data/ready/music/`
-   - Add images in `data/ready/image/`
+If you do not have node.js or npm run
+```bash
+sudo apt update
+sudo apt install node
+sudo apt install npm
+```
 
-4. **Start the Station**
-   ```bash
-   # Basic start
-   npm start
+If you do not have ffmpeg run
+```bash
+sudo apt update
+sudo apt install ffmpeg
+```
 
-   # Start with a specific YouTube video ID (if you want to capture the chat for feedback)
-   npm start your_video_id
+---
 
-   # Run for a specific duration (e.g., 4 hours)
-   npm start --uptime 4
-   ```
+### 📥 1. Clone & Install
+
+```bash
+git clone https://github.com/dbennell/citizen-radio.git
+cd citizen-radio
+
+# Optional: update system packages
+sudo apt update && sudo apt upgrade
+
+# Install Node.js dependencies
+npm install
+```
+
+---
+
+### ⚙️ 2. Set Up Environment Variables
+
+Create a `.env` file:
+
+```bash
+touch .env
+```
+
+Add your API keys:
+
+For a minimal local test install
+```
+# OpenAI API Key
+OPENAI_API_KEY=your_openai_api_key
+```
+
+For a standard install
+```
+# OpenAI API Key
+OPENAI_API_KEY=your_openai_api_key
+
+# Googles TTS service (required for segues and audio prompt generation)
+GOOGLE_TTS_API_KEY=your_google_tts_key
+
+# YouTube streaming settings
+YOUTUBE_STREAM_KEY=your_youtube_stream_key 
+
+# (required for feedback & rating system)
+YOUTUBE_API_KEY=
+
+```
+
+---
+
+### 🎧 3. Add Sample Content
+
+```bash
+cp -r example/* data/
+```
+
+Or, manually add:
+
+* MP3s → `data/ready/music/`
+* Images → `data/ready/image/`
+
+---
+
+### ▶️ 4. Start Broadcasting
+
+```bash
+npm start                # Default stream mode (YouTube)
+npm start --uptime 4     # Stream for 4 hours then stop
+npm start --debug        # Verbose logs, keep temp files
+npm start --stream-mode local  # Run without streaming (for testing)
+```
 
 5. **Control the Station**
    - `Ctrl+C`: Immediately stop the station

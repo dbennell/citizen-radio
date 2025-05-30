@@ -11,7 +11,7 @@
 
 const path = require('path');
 const fs = require('fs');
-const chalk = require('chalk').default;
+const chalk = require('chalk');
 
 // Import components
 const moodEnergyManager = require('../src/managers/moodEnergyManager');
