@@ -12,7 +12,7 @@ jest.mock('../../../src/core/streamer');
 jest.mock('../../../src/core/config', () => ({
   STATION_CONFIG: {
     schedule: {
-      defaultPattern: ['intro', 'music', 'segway', 'dj', 'music']
+      defaultPattern: ['intro', 'music', 'segue', 'dj', 'music']
     },
     trackHistory: {
       historySize: 16,
@@ -118,8 +118,8 @@ describe('Orchestrator Module', () => {
     playLogManager.appendPlayLog.mockImplementation(() => {});
     
     // Mock prompt processor
-    promptProcessor.generateSegway.mockResolvedValue('This is a test segway');
-    promptProcessor.prepareSegway.mockResolvedValue('/tmp/segway.mp3');
+    promptProcessor.generateSegway.mockResolvedValue('This is a test segue');
+    promptProcessor.prepareSegway.mockResolvedValue('/tmp/segue.mp3');
     
     // Mock streamer
     streamer.playFile.mockResolvedValue(true);

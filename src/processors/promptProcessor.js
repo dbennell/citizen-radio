@@ -33,14 +33,14 @@ function getTempDirectory(type, baseName = '') {
 
 // Create unified temp directory structure
 function createDirectories() {
-    const dirs = ['podcast', 'segway', 'dj', 'ad', 'intro', 'clips']; // Extendable
+    const dirs = ['podcast', 'segue', 'dj', 'ad', 'intro', 'clips']; // Extendable
     dirs.forEach(dir => fs.mkdirSync(path.join(TEMP_ROOT, dir), { recursive: true }));
-    const readyDirs = [...Object.keys(PROMPT_DIRS), 'segway'];
+    const readyDirs = [...Object.keys(PROMPT_DIRS), 'segue'];
     readyDirs.forEach(type => fs.mkdirSync(READY_DIR(type), { recursive: true }));
 }
 
 // function createDirectories() {
-//     const allTypes = [...Object.keys(PROMPT_DIRS), "segway"];
+//     const allTypes = [...Object.keys(PROMPT_DIRS), "segue"];
 //     allTypes.forEach(type => fs.mkdirSync(READY_DIR(type), { recursive: true }));
 //     fs.mkdirSync("ready", { recursive: true });
 // }
@@ -132,7 +132,7 @@ async function processPromptFile(type, filePath) {
             if (!fs.existsSync(outputFile)) {
                 await generateImage(elaboratedText, outputFile);
             }
-        } else if (["dj", "ad", "intro", "segway"].includes(type)) {
+        } else if (["dj", "ad", "intro", "segue"].includes(type)) {
             if (!fs.existsSync(outputFile)) {
                 await generateTTS(elaboratedText, outputFile, {
                     title: baseName,
@@ -301,7 +301,7 @@ async function generateImage(prompt, outputPath) {
 // }
 
 
-// Segway functionality has been moved to segwayManager.js
+// Segue functionality has been moved to segwayManager.js
 // The following functions have been removed:
 // - generateSegway
 // - prepareSegway
@@ -438,7 +438,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
 
         // For station ID transitions
         if ((prevType === 'id' || nextType === 'intro' || nextType === 'id')) {
-            return ""; // No segway for id → music or transitions to intro/id
+            return ""; // No segue for id → music or transitions to intro/id
         }
 
         // For intro → music transitions, announce the upcoming track
@@ -463,7 +463,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             // For music-to-music, use the AI for interesting transitions
             const context = `${STATION_CONFIG.context}. The station, '${STATION_CONFIG.stationName}', has the vibe of "${STATION_CONFIG.vibe}". DJ Name: '${STATION_CONFIG.djName}'.`;
             // Extracted default prompt and funny suffix for clarity
-            const basePrompt = STATION_CONFIG.aiPrompts.segway || "Write a smooth segway.";
+            const basePrompt = STATION_CONFIG.aiPrompts.segue || "Write a smooth segue.";
             const funnySuffix = includeFunny ? `\n\n${STATION_CONFIG.aiPrompts.segwayFunny}` : "";
 
             // Combine into a single prompt expression
@@ -481,7 +481,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                 - Comment: "${noteworthyComment.comment}"
                 - Rating: ${noteworthyComment.rating > 0 ? noteworthyComment.rating : 'None'}
 
-                Important: Incorporate this listener feedback naturally into your segway if possible.
+                Important: Incorporate this listener feedback naturally into your segue if possible.
                 `;
 
                 // Mark comment as referenced
@@ -552,7 +552,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                 - Comment: "${comment.comment}"
                 - Rating: ${comment.rating > 0 ? comment.rating : 'None'}
 
-                Important: Incorporate this listener feedback naturally into your segway if possible.`;
+                Important: Incorporate this listener feedback naturally into your segue if possible.`;
                     }
                     return '';
                   })() 
@@ -568,7 +568,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
                 Respond only with the DJ’s spoken words. Limit to 1–2 sentences. Be natural and entertaining.
                 `;
 
-            console.log("Generating music-to-music segway between:", prevTitle, "→", nextTitle);
+            console.log("Generating music-to-music segue between:", prevTitle, "→", nextTitle);
 
             // Call OpenAI API
             const openai = require('openai');
@@ -586,7 +586,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             });
 
             const segwayText = response.choices[0].message.content.trim();
-            console.log("Generated segway text:", segwayText);
+            console.log("Generated segue text:", segwayText);
             return segwayText;
         }
 
@@ -618,7 +618,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         const context = `${STATION_CONFIG.context}. The station, '${STATION_CONFIG.stationName}', has the vibe of "${STATION_CONFIG.vibe}". DJ Name: '${STATION_CONFIG.djName}'.`;
 
         // Extracted default prompt and funny suffix for clarity
-        const basePrompt = STATION_CONFIG.aiPrompts.segway || "Write a smooth segway.";
+        const basePrompt = STATION_CONFIG.aiPrompts.segue || "Write a smooth segue.";
         const funnySuffix = includeFunny ? `\n\n${STATION_CONFIG.aiPrompts.segwayFunny}` : "";
 
         // Combine into a single prompt expression
@@ -683,7 +683,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             - Comment: "${comment.comment}"
             - Rating: ${comment.rating > 0 ? comment.rating : 'None'}
 
-            Important: Incorporate this listener feedback naturally into your segway if possible.`;
+            Important: Incorporate this listener feedback naturally into your segue if possible.`;
                 }
                 return '';
               })() 
@@ -699,7 +699,7 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
             Respond only with the DJ’s spoken words. Limit to 1–2 sentences. Be natural and entertaining.
             `;
 
-        console.log("Generating segway between:", prevTitle, "→", nextTitle);
+        console.log("Generating segue between:", prevTitle, "→", nextTitle);
 
         // Call OpenAI API
         const openai = require('openai');
@@ -717,10 +717,10 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
         });
 
         const segwayText = response.choices[0].message.content.trim();
-        console.log("Generated segway text:", segwayText);
+        console.log("Generated segue text:", segwayText);
         return segwayText;
     } catch (error) {
-        console.error(`Error generating segway: ${error.message}`);
+        console.error(`Error generating segue: ${error.message}`);
         // Fallback text if API fails
         return `And that was ${prevMeta?.title || 'our last track'}. Coming up next on ${STATION_CONFIG.stationName}!`;
     }

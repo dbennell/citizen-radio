@@ -208,22 +208,22 @@ describe('Track Manager', () => {
     mockRandom.mockRestore();
   });
 
-  test('should clean up segway files', () => {
-    // Mock segway files
+  test('should clean up segue files', () => {
+    // Mock segue files
     fs.readdirSync.mockReturnValue(['segway_123.mp3', 'segway_456.mp3', 'not_a_segway.mp3']);
 
     trackManager.cleanupSegways();
 
-    expect(fs.existsSync).toHaveBeenCalledWith('/mock/data/ready/segway');
-    expect(fs.readdirSync).toHaveBeenCalledWith('/mock/data/ready/segway');
-    expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segway/segway_123.mp3');
-    expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segway/segway_456.mp3');
-    expect(fs.unlinkSync).not.toHaveBeenCalledWith('/mock/data/ready/segway/not_a_segway.mp3');
-    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Cleaned up 2 segway files'));
+    expect(fs.existsSync).toHaveBeenCalledWith('/mock/data/ready/segue');
+    expect(fs.readdirSync).toHaveBeenCalledWith('/mock/data/ready/segue');
+    expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segue/segway_123.mp3');
+    expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segue/segway_456.mp3');
+    expect(fs.unlinkSync).not.toHaveBeenCalledWith('/mock/data/ready/segue/not_a_segway.mp3');
+    expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Cleaned up 2 segue files'));
   });
 
-  test('should handle errors when cleaning up segway files', () => {
-    // Mock segway files
+  test('should handle errors when cleaning up segue files', () => {
+    // Mock segue files
     fs.readdirSync.mockReturnValue(['segway_123.mp3']);
     fs.unlinkSync.mockImplementation(() => {
       throw new Error('Unlink error');
@@ -232,12 +232,12 @@ describe('Track Manager', () => {
     trackManager.cleanupSegways();
 
     expect(mockConsoleError).toHaveBeenCalledWith(
-      expect.stringContaining('Error deleting segway file'),
+      expect.stringContaining('Error deleting segue file'),
       expect.any(Error)
     );
   });
 
-  test('should handle non-existent segway directory', () => {
+  test('should handle non-existent segue directory', () => {
     fs.existsSync.mockReturnValue(false);
 
     trackManager.cleanupSegways();

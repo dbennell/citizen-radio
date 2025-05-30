@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { pickNextTrack } = require('../managers/trackManager');
 const { getLastPlays, appendPlayLog } = require('../managers/playLogManager');
-const segwayManager = require('../managers/segwayManager');
+const segueManager = require('../managers/segueManager');
 const { playFile, streamFile, getRandomCoverImage } = require('./streamer');
 const { STATION_CONFIG, READY_DIR } = require('./config');
 const chalk = require('chalk').default;
@@ -131,25 +131,25 @@ async function playbackLoop() {
         emptyQueueCount = 0;
 
         try {
-            // Play pre-generated segway if available
-            if (queueItem.segway && queueItem.segway.filepath) {
+            // Play pre-generated segue if available
+            if (queueItem.segue && queueItem.segue.filepath) {
                 try {
-                    const segwayFile = queueItem.segway.filepath;
-                    console.log(`🔄 Playing generated segway before ${queueItem.type}: "${queueItem.meta.title}"`);
+                    const segueFile = queueItem.segue.filepath;
+                    console.log(`🔄 Playing generated segue before ${queueItem.type}: "${queueItem.meta.title}"`);
 
-                    // Play the segway first, and protect it during playback
+                    // Play the segue first, and protect it during playback
                     if (STATION_CONFIG.streamMode === 'youtube') {
-                        await streamFile(segwayFile);
+                        await streamFile(segueFile);
                     } else {
-                        await playFile(segwayFile);
+                        await playFile(segueFile);
                     }
 
-                    // Only clean up OTHER segways, not the one we just played
-                    await segwayManager.removeOldSegways(contentQueue.getItems(), segwayFile);
+                    // Only clean up OTHER segues, not the one we just played
+                    await segueManager.removeOldSegues(contentQueue.getItems(), segueFile);
 
-                    //console.log(`🔄 Played segway file: ${path.basename(segwayFile)}`);
-                } catch (segwayErr) {
-                    console.error('Error playing segway:', segwayErr);
+                    //console.log(`🔄 Played segue file: ${path.basename(segueFile)}`);
+                } catch (segueErr) {
+                    console.error('Error playing segue:', segueErr);
                 }
             }
 
@@ -217,10 +217,10 @@ async function playbackLoop() {
 
                 // After successful playback
                 contentQueue.markAsPlayed(queueItem);
-                // Log the play (skip segways)
+                // Log the play (skip segues)
                 try {
-                    // Don't log segways to play.log as they're never reused
-                    if (queueItem.type !== 'segway') {
+                    // Don't log segues to play.log as they're never reused
+                    if (queueItem.type !== 'segue') {
                         appendPlayLog(trackRel, queueItem.type, queueItem.meta);
                         console.log(`✏️ Logged play: ${queueItem.type} "${queueItem.meta.title}" (${trackRel})`);
                     }

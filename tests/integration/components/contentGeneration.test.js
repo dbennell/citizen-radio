@@ -96,8 +96,8 @@ describe('Content Generation Pipeline Integration', () => {
     AudioSynthesizer.prototype.synthesizeSpeech = jest.fn().mockResolvedValue('/path/to/synthesized/audio.mp3');
   });
   
-  describe('Track Selection → Segway Generation → Voice Synthesis', () => {
-    it('should generate a DJ segway for a selected track', async () => {
+  describe('Track Selection → Segue Generation → Voice Synthesis', () => {
+    it('should generate a DJ segue for a selected track', async () => {
       // Mock trackManager.selectNextTrack to return a test track
       const testTrack = {
         path: '/path/to/test_audio.mp3',
@@ -114,7 +114,7 @@ describe('Content Generation Pipeline Integration', () => {
       const track = await trackManager.selectNextTrack('music');
       expect(track).toEqual(testTrack);
       
-      // Generate a DJ segway for the track
+      // Generate a DJ segue for the track
       const prompt = await promptProcessor.generatePrompt({
         type: 'dj',
         context: {
@@ -173,7 +173,7 @@ describe('Content Generation Pipeline Integration', () => {
       // Execute the pipeline
       const track = await trackManager.selectNextTrack('music');
       
-      // Generate a DJ segway that references the track metadata
+      // Generate a DJ segue that references the track metadata
       const prompt = await promptProcessor.generatePrompt({
         type: 'dj',
         context: {

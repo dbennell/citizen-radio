@@ -102,6 +102,8 @@ const args = process.argv.slice(2);
 let cliVideoId = null;
 let cliUptimeHours = null;
 let cliUptimeMode = null;
+let cliStreamMode = null;
+
 
 // Check if the first argument is a video ID (not starting with --)
 if (args.length > 0 && !args[0].startsWith('--')) {
@@ -121,6 +123,9 @@ for (let i = 0; i < args.length; i++) {
     if (args[i] === "--uptime-mode" && args[i + 1] !== undefined) {
         const m = args[i + 1];
         if (m === "cycle" || m === "track") cliUptimeMode = m;
+    }
+    if (args[i] === "--local") {
+        cliStreamMode = "local";
     }
 }
 
@@ -143,6 +148,20 @@ if (cliUptimeMode) {
     STATION_CONFIG.uptimeMode = cliUptimeMode;
 } else if (STATION_CONFIG.uptimeMode === undefined) {
     STATION_CONFIG.uptimeMode = "cycle";
+}
+
+// Add stream mode handling after the uptime mode section
+// CLI parameter takes precedence over config file
+if (cliStreamMode) {
+    console.log(`🔄 Stream mode set to '${cliStreamMode}' via CLI parameter`);
+    STATION_CONFIG.streamMode = cliStreamMode;
+} else if (STATION_CONFIG.streamMode) {
+    // Use the value from config file if available
+    console.log(`🔄 Using configured stream mode: '${STATION_CONFIG.streamMode}'`);
+} else {
+    // Default to 'youtube' if not specified anywhere
+    STATION_CONFIG.streamMode = 'youtube';
+    console.log(`🔄 Using default stream mode: 'youtube'`);
 }
 
 

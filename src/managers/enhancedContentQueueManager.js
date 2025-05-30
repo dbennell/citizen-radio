@@ -15,7 +15,7 @@
 // const path = require('path');
 // const { STATION_CONFIG } = require('../core/config');
 // const { getLastPlays } = require('./playLogManager');
-// const segwayManager = require('./segwayManager');
+// const segwayManager = require('./segueManager');
 // const { extractMetadata } = require('../utils');
 //
 // // Import the new components
@@ -163,17 +163,17 @@
 //         type,
 //         filepath: entry.filepath,
 //         meta: entry.meta,
-//         segway: null
+//         segue: null
 //       };
 //
-//       // Generate segway from the CURRENTLY PLAYING track to this new track
+//       // Generate segue from the CURRENTLY PLAYING track to this new track
 //       // Only generate if this will be the NEXT item to play after current
 //       if (this.contentQueue.length === 0) {
 //         // This will be the next item to play after whatever is currently playing
-//         const segwayFile = await this.generateSegwayFromCurrentlyPlaying(queueItem);
+//         const segwayFile = await this.generateSegueFromCurrentlyPlaying(queueItem);
 //
 //         if (segwayFile) {
-//           queueItem.segway = {
+//           queueItem.segue = {
 //             filepath: segwayFile,
 //             generated: Date.now()
 //           };
@@ -207,9 +207,9 @@
 //   }
 //
 //   /**
-//    * Generate segway from currently playing track to the next track
+//    * Generate segue from currently playing track to the next track
 //    */
-//   async generateSegwayFromCurrentlyPlaying(nextItem) {
+//   async generateSegueFromCurrentlyPlaying(nextItem) {
 //     // Get the currently playing track from play log
 //     const { getLastPlays } = require('./playLogManager');
 //     const recentPlays = getLastPlays(1);
@@ -220,28 +220,28 @@
 //       : { meta: { title: 'Start' }, type: 'start' };
 //
 //     // Import segwayManager here to avoid circular dependencies
-//     const segwayManager = require('./segwayManager');
+//     const segwayManager = require('./segueManager');
 //
 //     const prevMeta = { ...currentlyPlaying.meta, type: currentlyPlaying.type };
 //     const nextMeta = { ...nextItem.meta, type: nextItem.type };
 //
-//     // Check if we should generate a segway for this transition
+//     // Check if we should generate a segue for this transition
 //     if (!segwayManager.shouldGenerateSegway(currentlyPlaying.type, nextItem.type)) {
 //       return null;
 //     }
 //
 //     try {
-//       console.log(`🔄 Pre-generating segway: ${currentlyPlaying.meta.title} → ${nextItem.meta.title}`);
+//       console.log(`🔄 Pre-generating segue: ${currentlyPlaying.meta.title} → ${nextItem.meta.title}`);
 //
 //       // Get additional context
-//       const prevTracks = getLastPlays(3).filter(entry => entry.type !== 'ad' && entry.type !== 'segway');
-//       const nextTracks = this.contentQueue.slice(0, 2).filter(item => item.type !== 'segway');
+//       const prevTracks = getLastPlays(3).filter(entry => entry.type !== 'ad' && entry.type !== 'segue');
+//       const nextTracks = this.contentQueue.slice(0, 2).filter(item => item.type !== 'segue');
 //
-//       // Generate segway text
+//       // Generate segue text
 //       const segwayText = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
 //
 //       if (segwayText && segwayText.trim()) {
-//         // Generate segway audio file
+//         // Generate segue audio file
 //         const segwayFile = await segwayManager.prepareSegway(
 //             segwayText,
 //             prevMeta,
@@ -250,47 +250,47 @@
 //         );
 //
 //         if (segwayFile) {
-//           console.log(`✅ Segway pre-generated: ${path.basename(segwayFile)}`);
+//           console.log(`✅ Segue pre-generated: ${path.basename(segwayFile)}`);
 //           return segwayFile;
 //         }
 //       }
 //     } catch (error) {
-//       console.error('Error generating segway from currently playing:', error);
+//       console.error('Error generating segue from currently playing:', error);
 //     }
 //
 //     return null;
 //   }
 //
 //   /**
-//    * Generate segway for a specific transition
+//    * Generate segue for a specific transition
 //    */
-//   async generateSegwayForTransition(prevItem, nextItem) {
+//   async generateSegueForTransition(prevItem, nextItem) {
 //     if (!prevItem || !nextItem) return null;
 //
 //     // Import segwayManager here to avoid circular dependencies
-//     const segwayManager = require('./segwayManager');
+//     const segwayManager = require('./segueManager');
 //
 //     const prevMeta = { ...prevItem.meta, type: prevItem.type };
 //     const nextMeta = { ...nextItem.meta, type: nextItem.type };
 //
-//     // Check if we should generate a segway for this transition
+//     // Check if we should generate a segue for this transition
 //     if (!segwayManager.shouldGenerateSegway(prevItem.type, nextItem.type)) {
 //       return null;
 //     }
 //
 //     try {
-//       console.log(`🔄 Pre-generating segway: ${prevItem.meta.title} → ${nextItem.meta.title}`);
+//       console.log(`🔄 Pre-generating segue: ${prevItem.meta.title} → ${nextItem.meta.title}`);
 //
 //       // Get additional context (previous tracks from play log, upcoming tracks from queue)
 //       const { getLastPlays } = require('./playLogManager');
-//       const prevTracks = getLastPlays(3).filter(entry => entry.type !== 'ad' && entry.type !== 'segway');
-//       const nextTracks = this.contentQueue.slice(0, 2).filter(item => item.type !== 'segway');
+//       const prevTracks = getLastPlays(3).filter(entry => entry.type !== 'ad' && entry.type !== 'segue');
+//       const nextTracks = this.contentQueue.slice(0, 2).filter(item => item.type !== 'segue');
 //
-//       // Generate segway text
+//       // Generate segue text
 //       const segwayText = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
 //
 //       if (segwayText && segwayText.trim()) {
-//         // Generate segway audio file
+//         // Generate segue audio file
 //         const segwayFile = await segwayManager.prepareSegway(
 //             segwayText,
 //             prevMeta,
@@ -299,12 +299,12 @@
 //         );
 //
 //         if (segwayFile) {
-//           console.log(`✅ Segway pre-generated: ${path.basename(segwayFile)}`);
+//           console.log(`✅ Segue pre-generated: ${path.basename(segwayFile)}`);
 //           return segwayFile;
 //         }
 //       }
 //     } catch (error) {
-//       console.error('Error generating segway for transition:', error);
+//       console.error('Error generating segue for transition:', error);
 //     }
 //
 //     return null;
@@ -502,17 +502,17 @@
 //    * Clean up any resources when shutting down
 //    */
 //   async cleanup() {
-//     // Import segwayManager to clean up segway files
-//     const segwayManager = require('./segwayManager');
+//     // Import segwayManager to clean up segue files
+//     const segwayManager = require('./segueManager');
 //
-//     // Clean up segway files that are not in the current queue
-//     // This preserves segways that are still needed for playback
+//     // Clean up segue files that are not in the current queue
+//     // This preserves segues that are still needed for playback
 //     // Pass null as the currently playing file since EnhancedContentQueueManager doesn't know which file is playing
 //     await segwayManager.removeOldSegways(this.contentQueue, null);
 //
 //     // Clear the queue
 //     this.contentQueue = [];
-//     console.log('🧹 Enhanced content queue cleared and unused segway files cleaned up');
+//     console.log('🧹 Enhanced content queue cleared and unused segue files cleaned up');
 //   }
 // }
 //

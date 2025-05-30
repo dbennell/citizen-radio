@@ -1,6 +1,6 @@
 /**
- * Integration tests for the segway system
- * Tests the interaction between ContentQueueManager and SegwayManager
+ * Integration tests for the segue system
+ * Tests the interaction between ContentQueueManager and SegueManager
  */
 
 const ContentQueueManager = require('../../src/managers/contentQueueManager');
@@ -12,17 +12,17 @@ const path = require('path');
 jest.mock('fs');
 jest.mock('path');
 jest.mock('../../src/utils/ttsHelper', () => ({
-  generateTTS: jest.fn().mockResolvedValue('/path/to/mock/segway.mp3')
+  generateTTS: jest.fn().mockResolvedValue('/path/to/mock/segue.mp3')
 }));
 jest.mock('../../src/utils/openaiHelper', () => ({
-  generateText: jest.fn().mockResolvedValue('This is a mock segway text')
+  generateText: jest.fn().mockResolvedValue('This is a mock segue text')
 }));
 
 // Mock segwayManager methods to track calls
 jest.mock('../../src/managers/segwayManager', () => ({
   shouldGenerateSegway: jest.fn().mockReturnValue(true),
-  generateSegway: jest.fn().mockResolvedValue('This is a mock segway text'),
-  prepareSegway: jest.fn().mockResolvedValue('/path/to/mock/segway.mp3'),
+  generateSegway: jest.fn().mockResolvedValue('This is a mock segue text'),
+  prepareSegway: jest.fn().mockResolvedValue('/path/to/mock/segue.mp3'),
   removeOldSegways: jest.fn().mockResolvedValue(undefined)
 }));
 
@@ -39,9 +39,9 @@ jest.mock('../../src/core/config', () => ({
         'intro->music': 0.9
       },
       'segwayFunny': 0.25,
-      'aiPrompts.segway': 'Generate a segway between tracks',
-      'aiPrompts.segwayFunny': 'Generate a funny segway between tracks',
-      'ttsProfiles.segway': 'en-US-Neural2-D',
+      'aiPrompts.segue': 'Generate a segue between tracks',
+      'aiPrompts.segwayFunny': 'Generate a funny segue between tracks',
+      'ttsProfiles.segue': 'en-US-Neural2-D',
       'enhancedEngagement.segwayReferenceChance': 0.3,
       'queue.minSize': 3,
       'queue.maxSize': 10
@@ -77,7 +77,7 @@ const mockTrackManager = {
   ])
 };
 
-describe('Segway Integration Tests', () => {
+describe('Segue Integration Tests', () => {
   let contentQueueManager;
   
   beforeEach(() => {
@@ -102,25 +102,25 @@ describe('Segway Integration Tests', () => {
   });
   
   // Test ID: INT-01
-  test('ContentQueueManager should call SegwayManager methods during prepareNextContent', async () => {
+  test('ContentQueueManager should call SegueManager methods during prepareNextContent', async () => {
     // Initialize the queue
     await contentQueueManager.initialize();
     
-    // Add a new item to trigger segway generation
+    // Add a new item to trigger segue generation
     await contentQueueManager.prepareNextContent();
     
-    // Verify SegwayManager methods were called
+    // Verify SegueManager methods were called
     expect(segwayManager.shouldGenerateSegway).toHaveBeenCalled();
     expect(segwayManager.generateSegway).toHaveBeenCalled();
     expect(segwayManager.prepareSegway).toHaveBeenCalled();
     
-    // Verify the segway was attached to the queue item
+    // Verify the segue was attached to the queue item
     const queueItems = contentQueueManager.getItems();
-    expect(queueItems.some(item => item.segway)).toBe(true);
+    expect(queueItems.some(item => item.segue)).toBe(true);
   });
   
   // Test ID: INT-01 (variation)
-  test('ContentQueueManager should pass correct parameters to SegwayManager', async () => {
+  test('ContentQueueManager should pass correct parameters to SegueManager', async () => {
     // Initialize the queue
     await contentQueueManager.initialize();
     
@@ -128,7 +128,7 @@ describe('Segway Integration Tests', () => {
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
     
-    // Add a new item to trigger segway generation
+    // Add a new item to trigger segue generation
     await contentQueueManager.prepareNextContent();
     
     // Verify parameters passed to generateSegway
@@ -141,14 +141,14 @@ describe('Segway Integration Tests', () => {
     
     // Verify parameters passed to prepareSegway
     expect(segwayManager.prepareSegway).toHaveBeenCalledWith(
-      'This is a mock segway text', // segwayText
+      'This is a mock segue text', // segwayText
       expect.any(String),           // key
       expect.any(String)            // voiceProfile
     );
   });
   
   // Test ID: INT-01 (edge case)
-  test('ContentQueueManager should not generate segway when shouldGenerateSegway returns false', async () => {
+  test('ContentQueueManager should not generate segue when shouldGenerateSegway returns false', async () => {
     // Mock shouldGenerateSegway to return false
     segwayManager.shouldGenerateSegway.mockReturnValueOnce(false);
     
@@ -168,7 +168,7 @@ describe('Segway Integration Tests', () => {
   });
   
   // Test ID: INT-01 (duplicate prevention)
-  test('ContentQueueManager should prevent duplicate segway generation', async () => {
+  test('ContentQueueManager should prevent duplicate segue generation', async () => {
     // Initialize the queue
     await contentQueueManager.initialize();
     
@@ -176,10 +176,10 @@ describe('Segway Integration Tests', () => {
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
     
-    // Add a new item to trigger segway generation
+    // Add a new item to trigger segue generation
     await contentQueueManager.prepareNextContent();
     
-    // First call should generate a segway
+    // First call should generate a segue
     expect(segwayManager.generateSegway).toHaveBeenCalled();
     expect(segwayManager.prepareSegway).toHaveBeenCalled();
     
@@ -187,16 +187,16 @@ describe('Segway Integration Tests', () => {
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
     
-    // Try to generate a segway for the same transition again
+    // Try to generate a segue for the same transition again
     await contentQueueManager.generateSegwaysForQueuePosition(1, false);
     
-    // Second call should not generate a segway for the same transition
+    // Second call should not generate a segue for the same transition
     expect(segwayManager.generateSegway).not.toHaveBeenCalled();
     expect(segwayManager.prepareSegway).not.toHaveBeenCalled();
   });
   
   // Test ID: INT-03 (partial)
-  test('ContentQueueManager should generate segways for position 2 in the queue', async () => {
+  test('ContentQueueManager should generate segues for position 2 in the queue', async () => {
     // Initialize the queue with multiple items
     await contentQueueManager.initialize();
     await contentQueueManager.replenishQueue();
@@ -205,10 +205,10 @@ describe('Segway Integration Tests', () => {
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
     
-    // Generate segways for position 2
+    // Generate segues for position 2
     await contentQueueManager.generateSegwaysForQueuePosition(1, true);
     
-    // Verify SegwayManager methods were called
+    // Verify SegueManager methods were called
     expect(segwayManager.shouldGenerateSegway).toHaveBeenCalled();
     expect(segwayManager.generateSegway).toHaveBeenCalled();
     expect(segwayManager.prepareSegway).toHaveBeenCalled();
@@ -222,10 +222,10 @@ describe('Segway Integration Tests', () => {
     // Initialize the queue
     await contentQueueManager.initialize();
     
-    // Add a new item to trigger segway generation
+    // Add a new item to trigger segue generation
     await contentQueueManager.prepareNextContent();
     
-    // Verify SegwayManager methods were called
+    // Verify SegueManager methods were called
     expect(segwayManager.shouldGenerateSegway).toHaveBeenCalled();
     // The first parameter (prevMeta) should have a default type
     expect(segwayManager.generateSegway).toHaveBeenCalledWith(

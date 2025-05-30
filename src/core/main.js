@@ -51,6 +51,14 @@ function cleanup() {
                 }
             }
 
+            // Clear segue cache to free up memory
+            try {
+                const segueManager = require('../managers/segueManager');
+                segueManager.clearSegueCache();
+            } catch (cacheErr) {
+                console.error('⚠️ Error clearing segue cache:', cacheErr.message);
+            }
+
             // Import killAllTrackedProcesses to ensure all processes are terminated
             const { killAllTrackedProcesses } = require('../utils');
 
@@ -103,12 +111,13 @@ function cleanTempDirectory(rootDir) {
 
 (async () => {
     console.log(`🪳 Debug mode is ${STATION_CONFIG.debug ? 'ON' : 'OFF'}`);
+    //console.log(`📡 Stream mode is set to: '${STATION_CONFIG.streamMode}'`);
     cleanTempDirectory(TEMP_ROOT);
     createDirectories();
     initPromptWatcher();
     setupKeyListener();
 
-    tracksManager.cleanupSegways();
+    tracksManager.cleanupSegues();
 
     // Check if the streamMode is YouTube and initialize the streamer
     if (STATION_CONFIG.streamMode === 'youtube') {

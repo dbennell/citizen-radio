@@ -381,7 +381,12 @@ function playFile(file) {
 
     ff.once("close", (code) => {
       if (code === 0) {
-        resolve();
+        // Add a small delay after the track finishes to ensure audio output completes
+        // This prevents cutting off the end of tracks when transitioning to the next one
+        console.log(`✅ Finished playing: ${file}, waiting for audio to complete...`);
+        setTimeout(() => {
+          resolve();
+        }, 500); // 500ms delay to ensure audio output completes
       } else {
         reject(new Error(`FFmpeg playback exited with code ${code}`));
       }
@@ -460,7 +465,6 @@ async function streamFile(file) {
   // TODO: set the loglevel based on if we are in debug or not
   return new Promise((resolve, reject) => {
     let streamEnded = false;
-    let pipeStream = null;
 
     const ff = spawnTrackedProcess(
       "/usr/bin/ffmpeg",
@@ -488,12 +492,54 @@ async function streamFile(file) {
     // Increase max listeners to prevent warnings
     ff.stdout.setMaxListeners(20);
 
+    // Variables for tracking resources
+    let pipeStream = null;
+    let pipeTimeout;
+    let lastDataTime = Date.now();
+    let dataListener;
+
+    // Function to clean up listeners, timeouts, and streams
+    const cleanupListeners = () => {
+      // Clear and nullify timeout
+      if (pipeTimeout) {
+        clearTimeout(pipeTimeout);
+        pipeTimeout = null;
+      }
+
+      // Remove the data listener to prevent memory leaks
+      if (ff && ff.stdout && dataListener) {
+        ff.stdout.removeListener('data', dataListener);
+      }
+
+      // Clean up pipe stream to prevent memory leaks
+      if (pipeStream) {
+        try {
+          // Remove any listeners from the pipe stream
+          if (typeof pipeStream.removeAllListeners === 'function') {
+            pipeStream.removeAllListeners();
+          }
+
+          // Unpipe if possible
+          if (ff && ff.stdout && typeof ff.stdout.unpipe === 'function') {
+            ff.stdout.unpipe(ffmpegStdin);
+          }
+
+          pipeStream = null;
+        } catch (err) {
+          console.error('Error cleaning up pipe stream:', err.message);
+        }
+      }
+    };
+
     // Function to handle cleanup
     const cleanupAndReject = (error) => {
       if (streamEnded) return;
       streamEnded = true;
 
       console.error(`🚨 Stream error: ${error.message}`);
+
+      // Clean up all listeners and timeouts
+      cleanupListeners();
 
       // Clean up the FFmpeg process
       if (ff && !ff.killed) {
@@ -531,7 +577,7 @@ async function streamFile(file) {
         } else {
           reject(error);
         }
-      }, 500); // Increased timeout to give more time for resources to be released
+      }, 750); // Increased timeout to give more time for resources to be released
     };
 
     // Set up error handlers first
@@ -576,8 +622,6 @@ async function streamFile(file) {
       });
 
       // Add a timeout to detect stalled pipes
-      let pipeTimeout;
-      let lastDataTime = Date.now();
 
       const resetPipeTimeout = () => {
         if (pipeTimeout) clearTimeout(pipeTimeout);
@@ -596,16 +640,19 @@ async function streamFile(file) {
       resetPipeTimeout();
 
       // Monitor data flow from the FFmpeg process's stdout
-      const dataListener = () => {
+      dataListener = () => {
         lastDataTime = Date.now();
       };
       ff.stdout.on('data', dataListener);
 
+      // Use the cleanupListeners function defined earlier
+
       // Clear the timeout and remove listeners when the stream ends normally
-      ff.once('close', () => {
-        if (pipeTimeout) clearTimeout(pipeTimeout);
-        // Remove the data listener to prevent memory leaks
-        ff.stdout.removeListener('data', dataListener);
+      ff.once('close', cleanupListeners);
+
+      // Also clean up on error to prevent memory leaks
+      ff.once('error', () => {
+        cleanupListeners();
       });
 
     } catch (err) {

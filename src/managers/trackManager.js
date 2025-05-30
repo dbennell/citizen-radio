@@ -14,7 +14,7 @@ const { generateTTS } = require('../utils/ttsHelper');
  * Helper – get the absolute path inside the ready/ tree.
  *   READY_DIR('')           →  .../ready
  *   READY_DIR('music')      →  .../ready/music
- *   READY_DIR('segway/foo') →  .../ready/segway/foo
+ *   READY_DIR('segue/foo') →  .../ready/segue/foo
  */
 function readyPath(subPath = '') {
     return READY_DIR(subPath);
@@ -109,15 +109,15 @@ async function pickNextTrack(type) {
 }
 
 /**
- * Delete leftover segway_*.mp3 files in ready/segway/
- * @param {Array} activeQueue - Optional array of currently queued items to preserve their segways
+ * Delete leftover segue_*.mp3 files in ready/segue/
+ * @param {Array} activeQueue - Optional array of currently queued items to preserve their segues
  */
-async function cleanupSegways(activeQueue = null) {
-    // Use the segwayManager to clean up segway files
-    const segwayManager = require('./segwayManager');
+async function cleanupSegues(activeQueue = null) {
+    // Use the segueManager to clean up segue files
+    const segueManager = require('./segueManager');
 
-    // If an active queue is provided, use it to preserve needed segways
-    // Otherwise, only delete segways that aren't referenced anywhere
+    // If an active queue is provided, use it to preserve needed segues
+    // Otherwise, only delete segues that aren't referenced anywhere
     try {
         // Try to get the content queue from the orchestrator if not provided
         if (!activeQueue) {
@@ -126,19 +126,19 @@ async function cleanupSegways(activeQueue = null) {
                 const contentQueue = orchestrator.getContentQueue();
                 if (contentQueue && contentQueue.contentQueue) {
                     activeQueue = contentQueue.contentQueue;
-                    console.log(`Using active content queue with ${activeQueue.length} items for segway cleanup`);
+                    console.log(`Using active content queue with ${activeQueue.length} items for segue cleanup`);
                 }
             } catch (err) {
-                console.log('No active content queue found, preserving all segways');
+                console.log('No active content queue found, preserving all segues');
                 activeQueue = [];
             }
         }
 
-        // Pass the active queue to removeOldSegways to preserve needed segways
+        // Pass the active queue to removeOldSegues to preserve needed segues
         // Pass null as the currently playing file since trackManager doesn't know which file is playing
-        await segwayManager.removeOldSegways(activeQueue || [], null);
+        await segueManager.removeOldSegues(activeQueue || [], null);
     } catch (err) {
-        console.error(`Error during segway cleanup: ${err.message}`);
+        console.error(`Error during segue cleanup: ${err.message}`);
     }
 }
 
@@ -200,6 +200,6 @@ async function performWeightedSelection(candidates) {
 
 module.exports = {
     pickNextTrack,
-    cleanupSegways,
+    cleanupSegues,
     performWeightedSelection
 };

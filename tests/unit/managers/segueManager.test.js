@@ -1,5 +1,5 @@
 /**
- * Unit tests for the SegwayManager
+ * Unit tests for the SegueManager
  */
 
 const segwayManager = require('../../../src/managers/segwayManager');
@@ -10,10 +10,10 @@ const path = require('path');
 jest.mock('fs');
 jest.mock('path');
 jest.mock('../../../src/utils/ttsHelper', () => ({
-  generateTTS: jest.fn().mockResolvedValue('/path/to/mock/segway.mp3')
+  generateTTS: jest.fn().mockResolvedValue('/path/to/mock/segue.mp3')
 }));
 jest.mock('../../../src/utils/openaiHelper', () => ({
-  generateText: jest.fn().mockResolvedValue('This is a mock segway text')
+  generateText: jest.fn().mockResolvedValue('This is a mock segue text')
 }));
 
 // Mock configuration
@@ -29,16 +29,16 @@ jest.mock('../../../src/core/config', () => ({
         'intro->music': 0.9
       },
       'segwayFunny': 0.25,
-      'aiPrompts.segway': 'Generate a segway between tracks',
-      'aiPrompts.segwayFunny': 'Generate a funny segway between tracks',
-      'ttsProfiles.segway': 'en-US-Neural2-D',
+      'aiPrompts.segue': 'Generate a segue between tracks',
+      'aiPrompts.segwayFunny': 'Generate a funny segue between tracks',
+      'ttsProfiles.segue': 'en-US-Neural2-D',
       'enhancedEngagement.segwayReferenceChance': 0.3
     };
     return key.split('.').reduce((o, i) => o[i], config);
   })
 }));
 
-describe('SegwayManager', () => {
+describe('SegueManager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     
@@ -87,7 +87,7 @@ describe('SegwayManager', () => {
 
   // Test ID: SM-UT-02
   describe('generateSegway', () => {
-    test('should generate segway text for music-to-music transition', async () => {
+    test('should generate segue text for music-to-music transition', async () => {
       const prevMeta = { type: 'music', title: 'Previous Track', artist: 'Artist A' };
       const nextMeta = { type: 'music', title: 'Next Track', artist: 'Artist B' };
       const prevTracks = [{ meta: { title: 'Track 1', artist: 'Artist C' } }];
@@ -95,7 +95,7 @@ describe('SegwayManager', () => {
       
       const result = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
       
-      expect(result).toBe('This is a mock segway text');
+      expect(result).toBe('This is a mock segue text');
       expect(require('../../../src/utils/openaiHelper').generateText).toHaveBeenCalled();
     });
 
@@ -112,13 +112,13 @@ describe('SegwayManager', () => {
 
   // Test ID: SM-UT-04
   describe('prepareSegway', () => {
-    test('should prepare segway audio file', async () => {
-      const segwayText = 'This is a test segway';
+    test('should prepare segue audio file', async () => {
+      const segwayText = 'This is a test segue';
       const key = 'music->music';
       
       const result = await segwayManager.prepareSegway(segwayText, key);
       
-      expect(result).toBe('/path/to/mock/segway.mp3');
+      expect(result).toBe('/path/to/mock/segue.mp3');
       expect(require('../../../src/utils/ttsHelper').generateTTS).toHaveBeenCalledWith(
         segwayText,
         expect.any(String),
@@ -127,7 +127,7 @@ describe('SegwayManager', () => {
     });
 
     test('should handle errors gracefully', async () => {
-      const segwayText = 'This is a test segway';
+      const segwayText = 'This is a test segue';
       const key = 'music->music';
       
       require('../../../src/utils/ttsHelper').generateTTS.mockRejectedValueOnce(new Error('TTS error'));
@@ -138,9 +138,9 @@ describe('SegwayManager', () => {
 
   // Test ID: SM-UT-05
   describe('removeOldSegways', () => {
-    test('should remove old segway files', async () => {
+    test('should remove old segue files', async () => {
       const contentQueue = [
-        { segway: 'segway_1234567890.mp3' }, // Referenced in queue
+        { segue: 'segway_1234567890.mp3' }, // Referenced in queue
       ];
       const currentlyPlaying = null;
       
@@ -152,7 +152,7 @@ describe('SegwayManager', () => {
       expect(fs.promises.unlink).not.toHaveBeenCalledWith(expect.stringContaining('segway_1234567890.mp3'));
     });
 
-    test('should protect currently playing segway file', async () => {
+    test('should protect currently playing segue file', async () => {
       const contentQueue = [];
       const currentlyPlaying = 'segway_0987654321.mp3';
       

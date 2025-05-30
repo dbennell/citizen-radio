@@ -256,8 +256,8 @@ async function runTest() {
     if (item) {
       console.log(`\n${i + 1}. ${chalk.bold(item.meta.title)} by ${chalk.italic(item.meta.artist || 'Unknown')} (${item.type})`);
 
-      if (item.segway) {
-        console.log(chalk.gray(`   Segway: ${item.segway.text.substring(0, 100)}...`));
+      if (item.segue) {
+        console.log(chalk.gray(`   Segue: ${item.segue.text.substring(0, 100)}...`));
       }
     } else {
       console.log(`${i + 1}. No more items in queue`);

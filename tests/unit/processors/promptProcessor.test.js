@@ -30,7 +30,7 @@ jest.mock('../../../src/core/config', () => ({
     context: 'A space station radio',
     segwayFunny: 0.3,
     aiPrompts: {
-      segway: 'Write a smooth segway',
+      segue: 'Write a smooth segue',
       segwayFunny: 'Make it funny',
       dj: 'Be enthusiastic',
       ad: 'Be persuasive',
@@ -38,7 +38,7 @@ jest.mock('../../../src/core/config', () => ({
     },
     ttsProfiles: {
       dj: 'en-US-Wavenet-D',
-      segway: 'en-US-Wavenet-B'
+      segue: 'en-US-Wavenet-B'
     },
     ratingSystem: {
       enabled: true
@@ -151,7 +151,7 @@ describe('Prompt Processor', () => {
     
     // Verify that directories were created
     expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/temp/podcast'), expect.anything());
-    expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/temp/segway'), expect.anything());
+    expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/temp/segue'), expect.anything());
     expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/temp/dj'), expect.anything());
     expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/temp/ad'), expect.anything());
     expect(fs.mkdirSync).toHaveBeenCalledWith(expect.stringContaining('/temp/intro'), expect.anything());
@@ -164,7 +164,7 @@ describe('Prompt Processor', () => {
     expect(fs.mkdirSync).toHaveBeenCalledWith('/mock/ready/music', expect.anything());
     expect(fs.mkdirSync).toHaveBeenCalledWith('/mock/ready/podcast', expect.anything());
     expect(fs.mkdirSync).toHaveBeenCalledWith('/mock/ready/image', expect.anything());
-    expect(fs.mkdirSync).toHaveBeenCalledWith('/mock/ready/segway', expect.anything());
+    expect(fs.mkdirSync).toHaveBeenCalledWith('/mock/ready/segue', expect.anything());
   });
 
   test('should initialize prompt watcher', () => {
@@ -214,7 +214,7 @@ describe('Prompt Processor', () => {
     expect(result).toBe('Generated text from OpenAI');
   });
 
-  test('should generate segway between music tracks', async () => {
+  test('should generate segue between music tracks', async () => {
     const promptProcessor = require('../../../src/processors/promptProcessor');
     
     const prevMeta = {
@@ -270,10 +270,10 @@ describe('Prompt Processor', () => {
     expect(result).toMatch(/sponsors|messages|partners|break|time/);
   });
 
-  test('should prepare segway audio file', async () => {
+  test('should prepare segue audio file', async () => {
     const promptProcessor = require('../../../src/processors/promptProcessor');
     
-    const segwayText = 'This is a test segway';
+    const segwayText = 'This is a test segue';
     const prevMeta = {
       type: 'music',
       title: 'Previous Track',
@@ -291,7 +291,7 @@ describe('Prompt Processor', () => {
     
     // Verify that TTS was called with the correct parameters
     expect(mockTTSClient.synthesizeSpeech).toHaveBeenCalledWith({
-      input: { text: expect.stringContaining('This is a test segway') },
+      input: { text: expect.stringContaining('This is a test segue') },
       voice: { languageCode: 'en-US', name: 'en-US-Wavenet-B' },
       audioConfig: { audioEncoding: 'MP3', speakingRate: 1.0 }
     });
@@ -303,11 +303,11 @@ describe('Prompt Processor', () => {
       'binary'
     );
     
-    // Verify that the result is the path to the segway file
+    // Verify that the result is the path to the segue file
     expect(result).toMatch(/segway_music_to_dj_/);
   });
 
-  test('should handle errors in segway generation', async () => {
+  test('should handle errors in segue generation', async () => {
     const promptProcessor = require('../../../src/processors/promptProcessor');
     
     // Mock OpenAI to throw an error
@@ -328,7 +328,7 @@ describe('Prompt Processor', () => {
     const result = await promptProcessor.generateSegway(prevMeta, nextMeta);
     
     // Verify that error was logged
-    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Error generating segway'), expect.anything());
+    expect(mockConsoleError).toHaveBeenCalledWith(expect.stringContaining('Error generating segue'), expect.anything());
     
     // Verify that a fallback message was returned
     expect(result).toContain('And that was Previous Track');
@@ -342,7 +342,7 @@ describe('Prompt Processor', () => {
       .mockRejectedValueOnce(new Error('TTS error'))
       .mockResolvedValueOnce([{ audioContent: Buffer.from('fallback audio content') }]);
     
-    const segwayText = 'This is a test segway';
+    const segwayText = 'This is a test segue';
     const prevMeta = { type: 'music', title: 'Previous Track' };
     const nextMeta = { type: 'dj', title: 'DJ Segment' };
     const key = 'music_to_dj';
@@ -355,11 +355,11 @@ describe('Prompt Processor', () => {
     // Verify that the second call used the fallback voice
     expect(mockTTSClient.synthesizeSpeech.mock.calls[1][0].voice.name).toBe('en-US-Chirp3-HD-Enceladus');
     
-    // Verify that the result is still the path to the segway file
+    // Verify that the result is still the path to the segue file
     expect(result).toMatch(/segway_music_to_dj_/);
   });
 
-  test('should include rating information in segway prompts', async () => {
+  test('should include rating information in segue prompts', async () => {
     const promptProcessor = require('../../../src/processors/promptProcessor');
     const ratingsManager = require('../../../src/managers/ratingsManager');
     

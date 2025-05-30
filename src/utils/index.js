@@ -208,8 +208,8 @@ function spawnTrackedProcess(command, args, options = {}) {
 // TODO: Why on earth does this exist!?!?!  We don't / shouldn't have a 'played' folder
 function moveFileToPlayed(filePath, type) {
     const readyDir = path.join(__dirname, 'ready', type);
-    if (type === 'segway' && path.dirname(filePath) === readyDir) {
-        try { fs.unlinkSync(filePath); console.log(`Removed segway file: ${filePath}`); } catch {}
+    if (type === 'segue' && path.dirname(filePath) === readyDir) {
+        try { fs.unlinkSync(filePath); console.log(`Removed segue file: ${filePath}`); } catch {}
         return;
     }
     const playedDir = path.join(__dirname, 'played', type);

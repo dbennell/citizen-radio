@@ -13,7 +13,7 @@
       "music", "music", "ad", "music", "dj",
       "music", "music", "ad", "music", "intro"
     ],
-    "autoSegways": {
+    "autoSegues": {
       "enabled": true,
       "transitionChances": {
         "music->music": 0.75,
@@ -45,15 +45,15 @@
     "dj": "A lively and enthusiastic (slightly sarcastic and comedic) radio host for a galactic space station. Add flair and personality to this regular dj talk segment! Only the text to be spoken!",
     "ad": "Generate compelling commercial voiceover for futuristic product advertisements. Only the text to be spoken! You are not the DJ, you are are 'Larry Scott' Advert Sales Guy.",
     "intro": "Create energetic station intros that captivate listeners. Only the text to be spoken!",
-    "segway": "Write a seamless transition between segments. Only the text to be spoken!",
-    "segwayFunny": "Before announcing the next track, throw in a quick, off-the-cuff, DJ-style joke, cheeky comment or thought of the day."
+    "segue": "Write a seamless transition between segments. Only the text to be spoken!",
+    "segueFunny": "Before announcing the next track, throw in a quick, off-the-cuff, DJ-style joke, cheeky comment or thought of the day."
   },
-  "segwayFunny": 0.25,
+  "segueFunny": 0.25,
   "ttsProfiles": {
     "dj": "en-US-Chirp3-HD-Enceladus",
     "ad": "en-US-Chirp3-HD-Charon",
     "intro": "en-US-Chirp3-HD-Enceladus",
-    "segway": "en-US-Chirp3-HD-Enceladus"
+    "segue": "en-US-Chirp3-HD-Enceladus"
   },
   "ttsAllowedPatterns": [
     "en-US-Chirp3-HD-*",
@@ -122,7 +122,7 @@
       "worst": 0.8
     },
     "ratingWeight": 0.5,
-    "segwayReferenceChance": 0.7,
+    "segueReferenceChance": 0.7,
     "useLLMSentimentAnalysis": true
   },
   "overlayManager": {

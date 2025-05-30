@@ -348,12 +348,12 @@ function matchRatingToTrack(rating) {
 
     // Check if we have a currently playing track
     if (currentlyPlaying) {
-        // Check if the track is a segway
-        const isSegway = currentlyPlaying.rel && currentlyPlaying.rel.toLowerCase().includes('segway');
+        // Check if the track is a segue
+        const isSegway = currentlyPlaying.rel && currentlyPlaying.rel.toLowerCase().includes('segue');
 
-        // If it's a segway and we have a previously played track, associate feedback with the previous track
+        // If it's a segue and we have a previously played track, associate feedback with the previous track
         if (isSegway && previouslyPlayed) {
-            console.log(`[Rating Debug] Current track is a segway, associating feedback with previous track: ${previouslyPlayed.rel}`);
+            console.log(`[Rating Debug] Current track is a segue, associating feedback with previous track: ${previouslyPlayed.rel}`);
             return {
                 track: previouslyPlayed.rel,
                 rating

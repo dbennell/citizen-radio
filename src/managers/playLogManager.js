@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const PLAY_LOG = path.join(__dirname, '../../data/play.log');
-const CACHE_LIMIT = 128; // How many of the newest rows we keep in memory
+const CACHE_LIMIT = 256; // How many of the newest rows we keep in memory
 let recentCache = []; // Chronological ring buffer (oldest → newest)
 
 /* ────────────────────────── Bootstrap recentCache ────────────────────────── */
@@ -25,7 +25,7 @@ function initializeCache() {
 
         // If recentCache is still empty, add a placeholder entry
         if (recentCache.length === 0) {
-            console.warn('[playLogManager] play.log is empty. Initializing recentCache with a placeholder.');
+            console.warn('💾 play.log is empty. Initializing recentCache with a placeholder.');
             recentCache.push({
                 timestamp: Date.now(),
                 relPath: 'placeholder.mp3',
@@ -36,9 +36,9 @@ function initializeCache() {
                 },
             });
         }
-        console.log(`[playLogManager] recentCache initialized with ${recentCache.length} entries.`);
+        console.log(`💾 recentCache initialized with ${recentCache.length} entries.`);
     } catch (err) {
-        console.error('[playLogManager] Failed to seed recentCache:', err);
+        console.error('💾 Failed to seed recentCache:', err);
         // Ensure recentCache is never undefined
         recentCache = [
             {
@@ -88,7 +88,7 @@ function appendPlayLog(relPath, type, meta) {
         recentCache.push(entry);
         if (recentCache.length > CACHE_LIMIT) recentCache.shift(); // Drop oldest
     } catch (err) {
-        console.error('[playLogManager] Failed to append play log:', err);
+        console.error('💾 Failed to append play log:', err);
     }
 }
 
@@ -110,7 +110,7 @@ function readPlays() {
             })
             .filter(Boolean);
     } catch (err) {
-        console.error('[playLogManager] Failed to read play log:', err);
+        console.error('💾 Failed to read play log:', err);
         return [];
     }
 }

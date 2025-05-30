@@ -217,21 +217,21 @@ describe('Utils - File and Process Functions', () => {
   });
 
   describe('moveFileToPlayed', () => {
-    it('should delete segway files instead of moving them', () => {
+    it('should delete segue files instead of moving them', () => {
       // Mock path.dirname to return the ready directory
-      const readyDir = path.join(__dirname, 'ready', 'segway');
+      const readyDir = path.join(__dirname, 'ready', 'segue');
       sinon.stub(path, 'dirname').returns(readyDir);
       
-      utils.moveFileToPlayed('/path/to/segway.mp3', 'segway');
+      utils.moveFileToPlayed('/path/to/segue.mp3', 'segue');
       
       // Verify fs.unlinkSync was called
-      expect(fs.unlinkSync).toHaveBeenCalledWith('/path/to/segway.mp3');
+      expect(fs.unlinkSync).toHaveBeenCalledWith('/path/to/segue.mp3');
       
       // Verify fs.renameSync was not called
       expect(fs.renameSync).not.toHaveBeenCalled();
     });
 
-    it('should move non-segway files to the played directory', () => {
+    it('should move non-segue files to the played directory', () => {
       // Mock path.dirname to return the ready directory for the first call
       // and something else for subsequent calls
       const readyDir = path.join(__dirname, 'ready', 'music');

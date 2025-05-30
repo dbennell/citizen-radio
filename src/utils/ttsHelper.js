@@ -30,7 +30,7 @@ const TTS_CACHE_DIR = path.join(__dirname, '../../data/cache/tts');
  * @param {string} text - The text to generate speech for.
  * @param {string} outputPath - The path to save the generated audio file.
  * @param {Object} metadata - Additional metadata (e.g., track title, artist, comments).
- * @param {string} type - Type of the TTS content (e.g., "segway", "dj", "ad").
+ * @param {string} type - Type of the TTS content (e.g., "segue", "dj", "ad").
  * @param {Object} STATION_CONFIG
  * @returns {Promise<string>} - The path to the generated audio file
  */

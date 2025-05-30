@@ -2,7 +2,7 @@
  * Engagement Monitor Module
  * 
  * Monitors live chat for noteworthy comments and ratings, stores them in memory,
- * and enables DJs to reference this feedback during segways.
+ * and enables DJs to reference this feedback during segues.
  */
 
 const { STATION_CONFIG } = require('../core/config');
@@ -163,7 +163,7 @@ function getNoteworthyComments() {
 }
 
 /**
- * Mark a comment as referenced in a segway
+ * Mark a comment as referenced in a segue
  * @param {number} index - Index of the comment
  * @returns {boolean} - Success status
  */
@@ -176,7 +176,7 @@ function markCommentReferenced(index) {
 }
 
 /**
- * Determine if a comment should be referenced in a segway
+ * Determine if a comment should be referenced in a segue
  * @returns {boolean} - Whether to reference a comment
  */
 function shouldReferenceComment() {
@@ -197,7 +197,7 @@ function shouldReferenceComment() {
 }
 
 /**
- * Get a comment to reference in a segway
+ * Get a comment to reference in a segue
  * @returns {Object|null} - Comment to reference or null if none available
  */
 function getCommentForSegway() {

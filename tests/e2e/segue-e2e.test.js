@@ -1,6 +1,6 @@
 /**
- * End-to-End tests for the segway system
- * Tests the full segway generation, playback, and cleanup flow
+ * End-to-End tests for the segue system
+ * Tests the full segue generation, playback, and cleanup flow
  */
 
 const Orchestrator = require('../../src/core/orchestrator');
@@ -13,10 +13,10 @@ const path = require('path');
 jest.mock('fs');
 jest.mock('path');
 jest.mock('../../src/utils/ttsHelper', () => ({
-  generateTTS: jest.fn().mockResolvedValue('/path/to/mock/segway.mp3')
+  generateTTS: jest.fn().mockResolvedValue('/path/to/mock/segue.mp3')
 }));
 jest.mock('../../src/utils/openaiHelper', () => ({
-  generateText: jest.fn().mockResolvedValue('This is a mock segway text')
+  generateText: jest.fn().mockResolvedValue('This is a mock segue text')
 }));
 
 // Partially mock segwayManager to track calls but keep functionality
@@ -25,8 +25,8 @@ jest.mock('../../src/managers/segwayManager', () => {
   return {
     ...originalModule,
     shouldGenerateSegway: jest.fn().mockReturnValue(true),
-    generateSegway: jest.fn().mockResolvedValue('This is a mock segway text'),
-    prepareSegway: jest.fn().mockResolvedValue('/path/to/mock/segway.mp3'),
+    generateSegway: jest.fn().mockResolvedValue('This is a mock segue text'),
+    prepareSegway: jest.fn().mockResolvedValue('/path/to/mock/segue.mp3'),
     removeOldSegways: jest.fn().mockResolvedValue(undefined)
   };
 });
@@ -87,9 +87,9 @@ jest.mock('../../src/core/config', () => ({
         'intro->music': 0.9
       },
       'segwayFunny': 0.25,
-      'aiPrompts.segway': 'Generate a segway between tracks',
-      'aiPrompts.segwayFunny': 'Generate a funny segway between tracks',
-      'ttsProfiles.segway': 'en-US-Neural2-D',
+      'aiPrompts.segue': 'Generate a segue between tracks',
+      'aiPrompts.segwayFunny': 'Generate a funny segue between tracks',
+      'ttsProfiles.segue': 'en-US-Neural2-D',
       'enhancedEngagement.segwayReferenceChance': 0.3,
       'queue.minSize': 3,
       'queue.maxSize': 10,
@@ -100,7 +100,7 @@ jest.mock('../../src/core/config', () => ({
   })
 }));
 
-describe('Segway End-to-End Tests', () => {
+describe('Segue End-to-End Tests', () => {
   let orchestrator;
   
   beforeEach(() => {
@@ -130,7 +130,7 @@ describe('Segway End-to-End Tests', () => {
   });
   
   // Test ID: E2E-01
-  test('Segways should be generated during initial queue population', async () => {
+  test('Segues should be generated during initial queue population', async () => {
     // Start the orchestrator
     await orchestrator.start();
     
@@ -140,21 +140,21 @@ describe('Segway End-to-End Tests', () => {
     // Verify the queue was initialized
     expect(contentQueue).toBeTruthy();
     
-    // Verify segway methods were called during initialization
+    // Verify segue methods were called during initialization
     expect(segwayManager.shouldGenerateSegway).toHaveBeenCalled();
     expect(segwayManager.generateSegway).toHaveBeenCalled();
     expect(segwayManager.prepareSegway).toHaveBeenCalled();
     
-    // Verify segways were attached to queue items
+    // Verify segues were attached to queue items
     const queueItems = contentQueue.getItems();
-    expect(queueItems.some(item => item.segway)).toBe(true);
+    expect(queueItems.some(item => item.segue)).toBe(true);
     
     // Clean up
     await orchestrator.stop();
   });
   
   // Test ID: E2E-02
-  test('Segways should be generated during queue replenishment', async () => {
+  test('Segues should be generated during queue replenishment', async () => {
     // Start the orchestrator
     await orchestrator.start();
     
@@ -175,7 +175,7 @@ describe('Segway End-to-End Tests', () => {
     // Trigger queue replenishment
     await contentQueue.replenishQueue();
     
-    // Verify segway methods were called during replenishment
+    // Verify segue methods were called during replenishment
     expect(segwayManager.shouldGenerateSegway).toHaveBeenCalled();
     expect(segwayManager.generateSegway).toHaveBeenCalled();
     expect(segwayManager.prepareSegway).toHaveBeenCalled();
@@ -185,7 +185,7 @@ describe('Segway End-to-End Tests', () => {
   });
   
   // Test ID: E2E-03
-  test('Segways should be played before their content during playback', async () => {
+  test('Segues should be played before their content during playback', async () => {
     // Start the orchestrator
     await orchestrator.start();
     
@@ -201,13 +201,13 @@ describe('Segway End-to-End Tests', () => {
     // Simulate a playback cycle
     await orchestrator.playbackLoop();
     
-    // Verify that segways were played before their content
+    // Verify that segues were played before their content
     for (let i = 0; i < playbackSequence.length; i++) {
       const filePath = playbackSequence[i];
-      if (filePath.includes('segway')) {
-        // If this is a segway, the next item should be content
+      if (filePath.includes('segue')) {
+        // If this is a segue, the next item should be content
         expect(i + 1 < playbackSequence.length).toBe(true);
-        expect(playbackSequence[i + 1].includes('segway')).toBe(false);
+        expect(playbackSequence[i + 1].includes('segue')).toBe(false);
       }
     }
     
@@ -224,7 +224,7 @@ describe('Segway End-to-End Tests', () => {
     const contentQueue = orchestrator.getContentQueue();
     contentQueue.contentQueue = [];
     
-    // Try to generate segways for an empty queue
+    // Try to generate segues for an empty queue
     await contentQueue.generateSegwaysForQueuePosition(1, false);
     
     // Verify no errors occurred
@@ -233,7 +233,7 @@ describe('Segway End-to-End Tests', () => {
     // Add just one item to the queue
     await contentQueue.prepareNextContent();
     
-    // Try to generate segways for position 2 when there's only one item
+    // Try to generate segues for position 2 when there's only one item
     await contentQueue.generateSegwaysForQueuePosition(1, false);
     
     // Verify no errors occurred
@@ -299,18 +299,18 @@ describe('Segway End-to-End Tests', () => {
       meta: { title: 'Specific Track' }
     };
     
-    // Add an item to trigger segway generation with one format
+    // Add an item to trigger segue generation with one format
     await contentQueue.prepareNextContent();
     
     // Reset mocks
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
     
-    // Now try to generate a segway for the same transition but with a different key format
+    // Now try to generate a segue for the same transition but with a different key format
     // This simulates the issue where different methods use different transition key formats
     await contentQueue.generateSegwaysForQueuePosition(1, true);
     
-    // In an ideal implementation, this would not generate a duplicate segway
+    // In an ideal implementation, this would not generate a duplicate segue
     // But with inconsistent key formats, it might
     // This test helps identify if the issue exists
     
@@ -319,26 +319,26 @@ describe('Segway End-to-End Tests', () => {
   });
   
   // Test ID: EC-06
-  test('System should protect segway files referenced by multiple queue items', async () => {
+  test('System should protect segue files referenced by multiple queue items', async () => {
     // Start the orchestrator
     await orchestrator.start();
     
     // Get the content queue
     const contentQueue = orchestrator.getContentQueue();
     
-    // Create a scenario where multiple queue items reference the same segway
-    const sharedSegwayPath = 'segway_1234567890.mp3';
+    // Create a scenario where multiple queue items reference the same segue
+    const sharedSeguePath = 'segway_1234567890.mp3';
     
-    // Add the segway to multiple queue items
+    // Add the segue to multiple queue items
     contentQueue.contentQueue.forEach(item => {
-      item.segway = sharedSegwayPath;
+      item.segue = sharedSeguePath;
     });
     
-    // Trigger segway cleanup
+    // Trigger segue cleanup
     await segwayManager.removeOldSegways(contentQueue.getItems(), null);
     
-    // Verify the shared segway file was not deleted
-    expect(fs.promises.unlink).not.toHaveBeenCalledWith(expect.stringContaining(sharedSegwayPath));
+    // Verify the shared segue file was not deleted
+    expect(fs.promises.unlink).not.toHaveBeenCalledWith(expect.stringContaining(sharedSeguePath));
     
     // Clean up
     await orchestrator.stop();
