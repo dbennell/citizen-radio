@@ -102,7 +102,7 @@ YOUTUBE_API_KEY=
 ### 🎧 3. Add Sample Content
 
 ```bash
-cp -r example/* data/
+rsync -av example/ready/ data/ready/
 ```
 
 Or, manually add:

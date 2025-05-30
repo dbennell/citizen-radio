@@ -6,7 +6,8 @@ const { pickNextTrack } = require('./trackManager');
 const segueManager = require('./segueManager');
 const { getLastPlays } = require('./playLogManager');
 const { STATION_CONFIG } = require('../core/config');
-const {default: chalk} = require("chalk");
+const chalk = require("chalk");
+
 
 class ContentQueueManager {
   constructor(options = {}) {
