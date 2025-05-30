@@ -63,6 +63,7 @@ sudo apt update && sudo apt upgrade
 npm install
 ```
 
+
 ---
 
 ### ⚙️ 2. Set Up Environment Variables
@@ -86,16 +87,45 @@ For a standard install
 # OpenAI API Key
 OPENAI_API_KEY=your_openai_api_key
 
-# Googles TTS service (required for segues and audio prompt generation)
-GOOGLE_TTS_API_KEY=your_google_tts_key
+# Googles TTS service 
+GOOGLE_APPLICATION_CREDENTIALS=your_google_tts_key
 
 # YouTube streaming settings
 YOUTUBE_STREAM_KEY=your_youtube_stream_key 
-
-# (required for feedback & rating system)
-YOUTUBE_API_KEY=
+YOUTUBE_API_KEY=your_youtube_api_key 
 
 ```
+
+---
+
+## 🎙 How to Set Up Google TTS
+
+The Citizen Radio system uses the official Google Cloud Text-to-Speech **Node.js SDK**, which requires **Application Default Credentials**.
+
+1. **Create a Google Cloud project**
+   [https://console.cloud.google.com/projectcreate](https://console.cloud.google.com/projectcreate)
+
+2. **Enable the Text-to-Speech API**
+   [https://console.cloud.google.com/apis/library/texttospeech.googleapis.com](https://console.cloud.google.com/apis/library/texttospeech.googleapis.com)
+
+3. **Create a service account**
+   [https://console.cloud.google.com/iam-admin/serviceaccounts](https://console.cloud.google.com/iam-admin/serviceaccounts)
+
+4. **Grant it the "Text-to-Speech API User" role**
+
+5. **Create a key** for the service account:
+
+* Select "Create Key"
+* Choose **JSON** format
+* Download the file
+
+6. **Save the file** to your system (e.g., `/home/ubuntu/google-tts.json`)
+
+7. **Set the environment variable** in your `.env` file:
+
+   ```env
+   GOOGLE_APPLICATION_CREDENTIALS=/home/ubuntu/google-tts.json
+   ```
 
 ---
 
@@ -125,7 +155,22 @@ npm start --stream-mode local  # Run without streaming (for testing)
    - `Ctrl+C`: Immediately stop the station
    - `Ctrl+X`: Stop after the current music track finishes
 
-## 🎙️ Creating Content
+
+6. **Headless**
+
+   If you want to be able to start the service and go on doing other things...
+   ```
+   tmux new -s citizenradio
+   npm start
+   ```
+   [Ctrl+B] then [D] to detach 
+
+   And then to reattach again later
+   ```
+   tmux attach -t citizenradio
+   ```
+
+## 📀️ Creating Content
 
 ### Adding Music
 Place MP3 files in `data/ready/music/` to add them to the rotation.
@@ -164,7 +209,7 @@ The system automatically processes text prompts placed in specific folders:
    - Text is converted to speech with appropriate voices
    - Finished audio is placed in the corresponding `data/ready/` directory
 
-## ⚙️ Configuration
+## 🪛️ Configuration
 
 ### Basic Configuration
 Edit `config/default.json` to customize your station:
