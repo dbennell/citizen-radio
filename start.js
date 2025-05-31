@@ -11,8 +11,7 @@ const musicDir = musicDirIndex !== -1 && args.length > musicDirIndex + 1
 
 if (hasAnalyzeFlag) {
     // Run the audio analyzer
-    console.log('🎵 Running audio analyzer...');
-    const { analyzeDirectory } = require('./src/utils/analyzeAudio');
+    const { analyzeDirectory } = require('./src/utils/audioAnalysisRunner');
 
     analyzeDirectory(musicDir)
         .then(() => {

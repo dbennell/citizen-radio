@@ -1,4 +1,4 @@
-// audioAnalyzer.js
+// AudioAnalysisEngine.js
 const fs = require('fs');
 const path = require('path');
 const { exec } = require('child_process');
@@ -6,7 +6,7 @@ const ffmpeg = require('fluent-ffmpeg');
 const util = require('util');
 const execPromise = util.promisify(exec);
 
-class AudioAnalyzer {
+class AudioAnalysisEngine {
     constructor() {
         this.results = new Map();
         this.dbPath = path.join(__dirname, '../../data/audio-analysis.json');
@@ -146,7 +146,7 @@ class AudioAnalyzer {
             const fileName = path.basename(file);
 
             // Clear the previous line and show current file with progress bar
-            process.stdout.write(`\r\x1b[K${fileName} ${this.createProgressBar(i+1, files.length)}`);
+            process.stdout.write(`\r\x1b[K${this.createProgressBar(i+1, files.length)} ${fileName}`);
 
             const analysis = await this.analyzeFile(file);
             if (analysis) {
@@ -154,7 +154,7 @@ class AudioAnalyzer {
                 await this.saveAnalysis(file, analysis);
             }
         }
-
+        
         // Add a newline after the progress bar is complete
         console.log('\n');
 
@@ -284,4 +284,4 @@ class AudioAnalyzer {
     }
 }
 
-module.exports = AudioAnalyzer;
+module.exports = AudioAnalysisEngine;
