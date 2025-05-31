@@ -357,15 +357,14 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
                 // Atomically replace the overlay file
                 fs.renameSync(tempFile, '/tmp/overlay.png');
 
-                // Update the symbolic link if it exists
-                if (fs.existsSync('/tmp/current_overlay.png')) {
-                    // The symbolic link should already be pointing to /tmp/overlay.png
-                    // No need to update it, just ensure the target file is updated
-                    //console.log('🖼️ Updated overlay image');
-                } else {
-                    // If the symlink doesn't exist for some reason, create it
-                    fs.symlinkSync('/tmp/overlay.png', '/tmp/current_overlay.png');
-                    //console.log('🖼️ Created new symbolic link to overlay image');
+                // Use direct file copy instead of symlink for faster image updates
+                try {
+                    // Copy the file directly instead of using a symlink
+                    // This helps reduce the lag between audio and image transitions
+                    fs.copyFileSync('/tmp/overlay.png', '/tmp/current_overlay.png');
+                    //console.log('🖼️ Updated overlay image with direct file copy for faster transitions');
+                } catch (err) {
+                    console.error('❌ Error copying overlay image:', err);
                 }
 
                 resolve();

@@ -341,8 +341,9 @@ npm run test:coverage     # Generate coverage report
 
 ### Common Issues
 
-1. **Updateing From Git Issues**
-   - Assuming you have no local changes just overwrite using.
+1. **Updating From Git Issues**
+   - if you have merge issues after pulling from origin main, and you have't done any local changes, 
+   - you are just an end user install then use to wipe clean with the new version.
    ```
    git reset --hard HEAD
    git pull --rebase
