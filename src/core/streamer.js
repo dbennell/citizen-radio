@@ -96,14 +96,18 @@ function startYouTubeStreamer() {
           console.warn("⚠️ Could not seed initial overlay:", err);
       }
 
-      // Use direct file copy instead of symlink for faster image updates
+      // Create a symbolic link to the overlay image
       try {
-          // Copy the file directly instead of using a symlink
-          // This helps reduce the lag between audio and image transitions
-          fs.copyFileSync("/tmp/overlay.png", "/tmp/current_overlay.png");
-          console.log("✅ Copied overlay image directly for faster transitions");
+          // Remove existing file or symlink if it exists
+          if (fs.existsSync("/tmp/current_overlay.png")) {
+              fs.unlinkSync("/tmp/current_overlay.png");
+          }
+          // Create a symbolic link to the overlay image
+          // This ensures that updates to overlay.png are immediately visible
+          fs.symlinkSync("/tmp/overlay.png", "/tmp/current_overlay.png");
+          console.log("✅ Created symbolic link to overlay image for live updates");
       } catch (err) {
-          console.warn("⚠️ Could not copy overlay image:", err);
+          console.warn("⚠️ Could not create symbolic link to overlay image:", err);
       }
 
       const { rtmpUrl, streamKey } = STATION_CONFIG.youtube;
@@ -218,11 +222,10 @@ function startYouTubeStreamer() {
                 "-f", "image2",             // use image demuxer
                 "-framerate", "30",         // input at 30 fps
                 "-loop", "1",               // loop the single image
-                "-i", "/tmp/current_overlay.png",  // Use direct file copy for faster image updates
+                "-i", "/tmp/current_overlay.png",  // Use symbolic link for live updates
 
                 // ───────── Buffering ─────────
                 "-thread_queue_size", "8192", // Reduced thread queue size for better synchronization
-                "-vsync", "1",              // Attempt to sync video to timestamps
 
                 // ───────── Audio ─────────
                 "-re",
@@ -235,6 +238,7 @@ function startYouTubeStreamer() {
 
                 // ───────── Encoders & Filters ─────────
                 "-vf", buildVideoFilter(),
+                "-fps_mode", "cfr",         // Constant frame rate mode for output
                 "-r", "30",
                 "-c:v", "libx264",
                 "-preset", "veryfast",
