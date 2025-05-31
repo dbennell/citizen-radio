@@ -96,17 +96,14 @@ function startYouTubeStreamer() {
           console.warn("⚠️ Could not seed initial overlay:", err);
       }
 
-      // Create a symbolic link to the overlay image
+      // Use direct file copy instead of symlink for faster image updates
       try {
-          // Remove existing symlink if it exists
-          if (fs.existsSync("/tmp/current_overlay.png")) {
-              fs.unlinkSync("/tmp/current_overlay.png");
-          }
-          // Create a new symlink
-          fs.symlinkSync("/tmp/overlay.png", "/tmp/current_overlay.png");
-          console.log("✅ Created symbolic link to overlay image");
+          // Copy the file directly instead of using a symlink
+          // This helps reduce the lag between audio and image transitions
+          fs.copyFileSync("/tmp/overlay.png", "/tmp/current_overlay.png");
+          console.log("✅ Copied overlay image directly for faster transitions");
       } catch (err) {
-          console.warn("⚠️ Could not create symbolic link to overlay:", err);
+          console.warn("⚠️ Could not copy overlay image:", err);
       }
 
       const { rtmpUrl, streamKey } = STATION_CONFIG.youtube;
@@ -221,18 +218,20 @@ function startYouTubeStreamer() {
                 "-f", "image2",             // use image demuxer
                 "-framerate", "30",         // input at 30 fps
                 "-loop", "1",               // loop the single image
-                "-i", "/tmp/current_overlay.png",  // Use symbolic link to allow image updates
+                "-i", "/tmp/current_overlay.png",  // Use direct file copy for faster image updates
 
                 // ───────── Buffering ─────────
-                "-thread_queue_size", "16384", // Further increased thread queue size for smoother video transitions
+                "-thread_queue_size", "8192", // Reduced thread queue size for better synchronization
+                "-vsync", "1",              // Attempt to sync video to timestamps
 
                 // ───────── Audio ─────────
                 "-re",
                 "-f", "s16le",
                 "-ar", "44100",
                 "-ac", "2",
-                "-thread_queue_size", "16384", // Further increased thread queue size for smoother audio transitions
+                "-thread_queue_size", "8192", // Reduced thread queue size for better audio-video synchronization
                 "-i", fifoPath,
+                "-async", "1",              // Audio sync method to help with synchronization
 
                 // ───────── Encoders & Filters ─────────
                 "-vf", buildVideoFilter(),
@@ -381,12 +380,12 @@ function playFile(file) {
 
     ff.once("close", (code) => {
       if (code === 0) {
-        // Add a small delay after the track finishes to ensure audio output completes
+        // Add a longer delay after the track finishes to ensure audio output completes
         // This prevents cutting off the end of tracks when transitioning to the next one
         console.log(`✅ Finished playing: ${file}, waiting for audio to complete...`);
         setTimeout(() => {
           resolve();
-        }, 500); // 500ms delay to ensure audio output completes
+        }, 1500); // Increased to 1500ms delay to prevent audio clipping during transitions
       } else {
         reject(new Error(`FFmpeg playback exited with code ${code}`));
       }
@@ -693,15 +692,19 @@ async function streamFile(file) {
 function stopYouTubeStreamer() {
   console.log("⏹️ Stopping YouTube streamer...");
 
-  // Track if we've started cleanup
-  let cleanupStarted = false;
-
   // Return a promise that resolves when cleanup is complete
-  return new Promise((resolve) => {
-    // Create a cleanup function to avoid code duplication
-    const cleanup = () => {
-      if (cleanupStarted) return;
-      cleanupStarted = true;
+  return new Promise(async (resolve) => {
+    try {
+      // Clean up existing processes
+      if (ffmpegStdin) {
+        console.log("⏹️ Closing FFmpeg stdin...");
+        try {
+          ffmpegStdin.end();
+        } catch (err) {
+          console.error('Failed to close FFmpeg stdin:', err.message);
+        }
+        ffmpegStdin = null;
+      }
 
       if (youtubeProc && !youtubeProc.killed) {
         console.log(`⏹️ Killing YouTube streamer process: PID ${youtubeProc.pid}`);
@@ -713,25 +716,37 @@ function stopYouTubeStreamer() {
         youtubeProc = null;
       }
 
-      if (ffmpegStdin) {
-        console.log("⏹️ Closing FFmpeg stdin...");
+      if (audioBufferProc && !audioBufferProc.killed) {
+        console.log(`⏹️ Killing audio buffer process: PID ${audioBufferProc.pid}`);
         try {
-          ffmpegStdin.end();
+          audioBufferProc.kill("SIGINT");
         } catch (err) {
-          console.error('Failed to close FFmpeg stdin:', err.message);
+          console.error('Failed to kill audio buffer process:', err.message);
         }
-        ffmpegStdin = null;
+        audioBufferProc = null;
       }
 
-      // Wait a short time for processes to begin terminating
-      setTimeout(() => {
-        console.log("✅ YouTube streamer shutdown complete");
-        resolve();
-      }, 500);
-    };
+      // Wait a moment for processes to begin terminating
+      await new Promise(resolveTimeout => setTimeout(resolveTimeout, 1000));
 
-    // Execute cleanup
-    cleanup();
+      // Make sure we don't have any zombie processes
+      try {
+        // Check for any lingering ffmpeg processes and kill them
+        console.log("🧹 Checking for lingering ffmpeg processes...");
+        const { execSync } = require("child_process");
+        execSync('pkill -f "ffmpeg.*audio_buffer.fifo" || true');
+        execSync('pkill -f "ffmpeg.*overlay.png" || true');
+      } catch (error) {
+        // Ignore errors from pkill, as it might return non-zero if no processes are found
+        console.log("⚠️ Note: pkill commands may have returned non-zero (this is normal if no processes were found)");
+      }
+
+      console.log("✅ YouTube streamer shutdown complete");
+      resolve();
+    } catch (err) {
+      console.error("⚠️ Error during YouTube streamer shutdown:", err.message);
+      resolve(); // Resolve anyway to ensure we don't hang
+    }
   });
 }
 /**

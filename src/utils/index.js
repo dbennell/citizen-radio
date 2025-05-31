@@ -273,7 +273,58 @@ function extractMetadata(filePath) {
 
     return metadata;
 }
-async function killAllTrackedProcesses() { /* unchanged */ }
+/**
+ * Kill all tracked processes and wait for them to terminate
+ * @returns {Promise} A promise that resolves when all processes have been terminated
+ */
+async function killAllTrackedProcesses() {
+    if (runningProcesses.length === 0) {
+        console.log('No processes to kill. Cleanup complete.');
+        return Promise.resolve();
+    }
+
+    console.log(`Killing ${runningProcesses.length} tracked processes...`);
+
+    // First attempt: Send SIGTERM to all processes
+    runningProcesses.forEach(proc => {
+        if (!proc.killed) {
+            try {
+                console.log(`Sending SIGTERM to process ${proc.pid}`);
+                proc.kill('SIGTERM');
+            } catch (err) {
+                console.error(`Error sending SIGTERM to process ${proc.pid}:`, err.message);
+            }
+        }
+    });
+
+    // Wait a moment for processes to terminate gracefully
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    // Second attempt: Send SIGKILL to any remaining processes
+    const remainingProcesses = [...runningProcesses];
+    if (remainingProcesses.length > 0) {
+        console.log(`${remainingProcesses.length} processes still running, sending SIGKILL...`);
+        remainingProcesses.forEach(proc => {
+            if (!proc.killed) {
+                try {
+                    console.log(`Sending SIGKILL to process ${proc.pid}`);
+                    proc.kill('SIGKILL');
+                } catch (err) {
+                    console.error(`Error sending SIGKILL to process ${proc.pid}:`, err.message);
+                }
+            }
+        });
+
+        // Wait a moment for SIGKILL to take effect
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    // Clear the runningProcesses array
+    runningProcesses.length = 0;
+
+    console.log('All processes terminated.');
+    return Promise.resolve();
+}
 async function fetchLastChatComments(videoId, maxComments = 10) { /* unchanged */ }
 
 module.exports = {

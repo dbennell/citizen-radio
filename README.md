@@ -168,6 +168,27 @@ npm start --stream-mode local  # Run without streaming (for testing)
 ### Adding Music
 Place MP3 files in `data/ready/music/` to add them to the rotation.
 
+### Analyzing Audio Files
+The system includes an audio analyzer utility that evaluates music files for mood and energy metrics, which helps with better track selection based on the desired atmosphere:
+
+```bash
+# Analyze all MP3 files in the default music directory
+node start.js --analyze
+
+# Analyze files in a specific directory
+node start.js --analyze --music-dir /path/to/music
+```
+
+The analyzer:
+- Evaluates each track for mood (energetic, peaceful, aggressive, melancholic, neutral)
+- Measures energy levels (RMS energy, dynamic range, loudness)
+- Detects BPM (beats per minute)
+- Identifies if the track has vocals
+- Saves analysis results alongside each audio file and in a central database
+- Provides a summary of mood and energy distribution across your music library
+
+Analysis results are used by the track selection algorithm to create better mood transitions and energy waves throughout the broadcast.
+
 ### Creating AI-Generated Content
 The system automatically processes text prompts placed in specific folders:
 
@@ -233,11 +254,13 @@ See the `config/default.json` file for all available options.
 
 ## 🔧 Command Line Options
 
-- `npm start --video your_video_id`: Start with a specific YouTube video ID
-- `npm start --uptime 4`: Run for 4 hours then stop
-- `npm start --uptime-mode cycle`: Complete the current content cycle before stopping
-- `npm start --debug`: Enable debug mode with verbose logging
-- `npm start --stream-mode local`: Run in local mode without streaming
+- `node start --video your_video_id`: Start with a specific YouTube video ID
+- `node start --uptime 4`: Run for 4 hours then stop
+- `node start --uptime-mode cycle`: Complete the current content cycle before stopping
+- `node start --debug`: Enable debug mode with verbose logging
+- `node start --stream-mode local`: Run in local mode without streaming
+- `node start --analyze`: Run the audio analyzer to evaluate mood and energy for all MP3 files in the music directory
+- `node start --analyze --music-dir /path/to/music`: Analyze audio files in a specific directory
 
 ## 📁 Project Structure
 
@@ -268,6 +291,51 @@ npm run test:integration  # Run integration tests
 npm run test:e2e          # Run end-to-end tests
 npm run test:coverage     # Generate coverage report
 ```
+
+
+### Standard Update Process
+
+1. **Stop the service** (if running):
+   ```bash
+   # If running in foreground: Ctrl+C or Ctrl+X
+   # If running in tmux session:
+   tmux attach -t citizenradio
+   # Then Ctrl+C or Ctrl+X to stop
+   ```
+
+2. **Backup your configuration and data** (recommended):
+   ```bash
+   # Backup your environment file
+   cp .env .env.backup
+   
+   # Backup your custom configuration
+   cp config/default.json config/default.json.backup
+   
+   # Backup your content (optional, but recommended)
+   tar -czf data-backup-$(date +%Y%m%d).tar.gz data/
+   ```
+
+3. **Pull the latest changes**:
+   ```bash
+   git pull origin main
+   ```
+
+4. **Update dependencies** (if package.json changed):
+   ```bash
+   npm install
+   ```
+
+5. **Check for configuration changes**:
+   ```bash
+   # Compare your config with the new default (if updated)
+   diff config/default.json.backup config/default.json
+   ```
+
+6. **Restart the service**:
+   ```bash
+   npm start
+   ```
+
 
 ## 🔍 Troubleshooting
 
