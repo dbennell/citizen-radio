@@ -198,11 +198,11 @@ async function performWeightedSelection(candidates) {
             // Ensure a minimum of 0.01 tickets
             tickets = Math.max(0.01, tickets);
 
-            if (tickets < 1) {
-                console.log(`Track "${candidate.rel}" has very high play count (${playCount}), reduced to ${tickets.toFixed(2)} tickets`);
-            } else {
-                console.log(`Track "${candidate.rel}" has play count ${playCount}, tickets reduced to ${tickets.toFixed(2)}`);
-            }
+            // if (tickets < 1) {
+            //     console.log(`Track "${candidate.rel}" has very high play count (${playCount}), reduced to ${tickets.toFixed(2)} tickets`);
+            // } else {
+            //     console.log(`Track "${candidate.rel}" has play count ${playCount}, tickets reduced to ${tickets.toFixed(2)}`);
+            // }
         }
 
         candidatesWithRatings.push({

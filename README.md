@@ -341,17 +341,24 @@ npm run test:coverage     # Generate coverage report
 
 ### Common Issues
 
-1. **API Key Problems**
+1. **Updateing From Git Issues**
+   - Assuming you have no local changes just overwrite using.
+   ```
+   git reset --hard HEAD
+   git pull --rebase
+   ```
+
+2. **API Key Problems**
    - Verify your API keys in the `.env` file
    - Check API usage limits and billing status
 
-2. **Streaming Issues**
+3. **Streaming Issues**
    - Ensure FFmpeg is installed correctly
    - Check your YouTube stream settings
    - Run `pkill -f ffmpeg` to kill any lingering processes
    - Verify no other processes are using `/tmp/audio_buffer.fifo`
 
-3. **Content Generation Problems**
+4. **Content Generation Problems**
    - Check the logs for API errors
    - Verify prompt formats
    - Look in `data/temp/` for intermediate files (with debug mode enabled)
