@@ -64,7 +64,7 @@ async function playbackLoop() {
     const vid = await getPersistentVideoId();
     if (vid) console.log('📹 Live commenting enabled:', vid);
 
-    console.log(chalk.yellow(`▶️ Starting playback: ${pattern.join(', ')}`));
+    console.log(chalk.green(`▶️ Starting playback: ${pattern.join(', ')}`));
     console.log(chalk.magenta(`⏱️ Uptime: ${STATION_CONFIG.uptimeHours || '∞'}h, mode: ${STATION_CONFIG.uptimeMode || 'none'}`));
 
     // Initialize content queue
@@ -208,9 +208,19 @@ async function playbackLoop() {
                 }
 
                 if (STATION_CONFIG.streamMode === 'youtube') {
-                    // Clear comments when starting a new track
+                    // Start streaming the file first
+                    const streamPromise = streamFile(queueItem.filepath);
+
+                    // Add a small delay to ensure the new track has started playing
+                    // before updating the overlay image
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+
+                    // Clear comments when starting a new track and update the overlay
+                    // after the track has started playing
                     await overlayManager.updateOverlay(queueItem.filepath, vid, true);
-                    await streamFile(queueItem.filepath);
+
+                    // Wait for the streaming to complete
+                    await streamPromise;
                 } else {
                     await playFile(queueItem.filepath);
                 }

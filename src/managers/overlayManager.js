@@ -361,8 +361,18 @@ async function updateOverlay(trackPath, videoId, clearComments = false) {
                 try {
                     // Copy the file directly instead of using a symlink
                     // This helps reduce the lag between audio and image transitions
-                    fs.copyFileSync('/tmp/overlay.png', '/tmp/current_overlay.png');
-                    //console.log('🖼️ Updated overlay image with direct file copy for faster transitions');
+
+                    // Use a more efficient approach to update the image
+                    // First, create a new temporary file for the current overlay
+                    const currentTempFile = '/tmp/current_overlay_temp.png';
+
+                    // Copy to the temporary file first
+                    fs.copyFileSync('/tmp/overlay.png', currentTempFile);
+
+                    // Then atomically rename it to ensure a clean transition
+                    fs.renameSync(currentTempFile, '/tmp/current_overlay.png');
+
+                    //console.log('🖼️ Updated overlay image with optimized file copy for faster transitions');
                 } catch (err) {
                     console.error('❌ Error copying overlay image:', err);
                 }

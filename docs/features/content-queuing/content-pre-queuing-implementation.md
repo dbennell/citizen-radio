@@ -212,7 +212,7 @@ async function playbackLoop() {
     const vid = await getPersistentVideoId();
     if (vid) console.log('📹 Live commenting enabled:', vid);
 
-    console.log(chalk.yellow(`▶️ Starting playback: ${pattern.join(', ')}`));
+    console.log(chalk.green(`▶️ Starting playback: ${pattern.join(', ')}`));
     console.log(chalk.magenta(`⏱️ Uptime: ${STATION_CONFIG.uptimeHours || '∞'}h, mode: ${STATION_CONFIG.uptimeMode || 'none'}`));
 
     // Initialize content queue

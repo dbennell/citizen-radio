@@ -225,14 +225,14 @@ function startYouTubeStreamer() {
                 "-i", "/tmp/current_overlay.png",  // Use symbolic link for live updates
 
                 // ───────── Buffering ─────────
-                "-thread_queue_size", "8192", // Reduced thread queue size for better synchronization
+                "-thread_queue_size", "16384", // Increased thread queue size for better buffer handling
 
                 // ───────── Audio ─────────
                 "-re",
                 "-f", "s16le",
                 "-ar", "44100",
                 "-ac", "2",
-                "-thread_queue_size", "8192", // Reduced thread queue size for better audio-video synchronization
+                "-thread_queue_size", "16384", // Increased thread queue size for better audio-video synchronization
                 "-i", fifoPath,
                 "-async", "1",              // Audio sync method to help with synchronization
 
