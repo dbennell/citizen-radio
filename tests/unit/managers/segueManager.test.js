@@ -2,7 +2,7 @@
  * Unit tests for the SegueManager
  */
 
-const segwayManager = require('../../../src/managers/segwayManager');
+const segwayManager = require('../../../src/managers/segueManager');
 const fs = require('fs');
 const path = require('path');
 
@@ -41,17 +41,17 @@ jest.mock('../../../src/core/config', () => ({
 describe('SegueManager', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Mock file system functions
     fs.promises = {
-      readdir: jest.fn().mockResolvedValue(['segway_1234567890.mp3', 'segway_0987654321.mp3']),
+      readdir: jest.fn().mockResolvedValue(['segue_1234567890.mp3', 'segue_0987654321.mp3']),
       stat: jest.fn().mockResolvedValue({
         mtime: new Date(Date.now() - 60000), // 1 minute ago
         isFile: () => true
       }),
       unlink: jest.fn().mockResolvedValue(undefined)
     };
-    
+
     path.join = jest.fn().mockImplementation((...args) => args.join('/'));
     path.resolve = jest.fn().mockImplementation((...args) => args.join('/'));
   });
@@ -66,7 +66,7 @@ describe('SegueManager', () => {
     test('should return false when autoSegways is disabled', () => {
       jest.spyOn(require('../../../src/core/config'), 'get')
         .mockImplementationOnce(() => false);
-      
+
       const result = segwayManager.shouldGenerateSegway('music', 'music');
       expect(result).toBe(false);
     });
@@ -79,7 +79,7 @@ describe('SegueManager', () => {
           }
           return true;
         });
-      
+
       const result = segwayManager.shouldGenerateSegway('music', 'ad');
       expect(result).toBe(false);
     });
@@ -92,9 +92,9 @@ describe('SegueManager', () => {
       const nextMeta = { type: 'music', title: 'Next Track', artist: 'Artist B' };
       const prevTracks = [{ meta: { title: 'Track 1', artist: 'Artist C' } }];
       const nextTracks = [{ meta: { title: 'Track 2', artist: 'Artist D' } }];
-      
+
       const result = await segwayManager.generateSegway(prevMeta, nextMeta, prevTracks, nextTracks);
-      
+
       expect(result).toBe('This is a mock segue text');
       expect(require('../../../src/utils/openaiHelper').generateText).toHaveBeenCalled();
     });
@@ -102,9 +102,9 @@ describe('SegueManager', () => {
     test('should handle missing context gracefully', async () => {
       const prevMeta = null;
       const nextMeta = { type: 'music', title: 'Next Track', artist: 'Artist B' };
-      
+
       const result = await segwayManager.generateSegway(prevMeta, nextMeta, [], []);
-      
+
       expect(result).toBeTruthy();
       expect(typeof result).toBe('string');
     });
@@ -115,9 +115,9 @@ describe('SegueManager', () => {
     test('should prepare segue audio file', async () => {
       const segwayText = 'This is a test segue';
       const key = 'music->music';
-      
+
       const result = await segwayManager.prepareSegway(segwayText, key);
-      
+
       expect(result).toBe('/path/to/mock/segue.mp3');
       expect(require('../../../src/utils/ttsHelper').generateTTS).toHaveBeenCalledWith(
         segwayText,
@@ -129,9 +129,9 @@ describe('SegueManager', () => {
     test('should handle errors gracefully', async () => {
       const segwayText = 'This is a test segue';
       const key = 'music->music';
-      
+
       require('../../../src/utils/ttsHelper').generateTTS.mockRejectedValueOnce(new Error('TTS error'));
-      
+
       await expect(segwayManager.prepareSegway(segwayText, key)).rejects.toThrow('TTS error');
     });
   });
@@ -140,28 +140,28 @@ describe('SegueManager', () => {
   describe('removeOldSegways', () => {
     test('should remove old segue files', async () => {
       const contentQueue = [
-        { segue: 'segway_1234567890.mp3' }, // Referenced in queue
+        { segue: 'segue_1234567890.mp3' }, // Referenced in queue
       ];
       const currentlyPlaying = null;
-      
+
       await segwayManager.removeOldSegways(contentQueue, currentlyPlaying);
-      
+
       // Should delete the unreferenced file
-      expect(fs.promises.unlink).toHaveBeenCalledWith(expect.stringContaining('segway_0987654321.mp3'));
+      expect(fs.promises.unlink).toHaveBeenCalledWith(expect.stringContaining('segue_0987654321.mp3'));
       // Should not delete the referenced file
-      expect(fs.promises.unlink).not.toHaveBeenCalledWith(expect.stringContaining('segway_1234567890.mp3'));
+      expect(fs.promises.unlink).not.toHaveBeenCalledWith(expect.stringContaining('segue_1234567890.mp3'));
     });
 
     test('should protect currently playing segue file', async () => {
       const contentQueue = [];
-      const currentlyPlaying = 'segway_0987654321.mp3';
-      
+      const currentlyPlaying = 'segue_0987654321.mp3';
+
       await segwayManager.removeOldSegways(contentQueue, currentlyPlaying);
-      
+
       // Should not delete the currently playing file
-      expect(fs.promises.unlink).not.toHaveBeenCalledWith(expect.stringContaining('segway_0987654321.mp3'));
+      expect(fs.promises.unlink).not.toHaveBeenCalledWith(expect.stringContaining('segue_0987654321.mp3'));
       // Should delete the other file
-      expect(fs.promises.unlink).toHaveBeenCalledWith(expect.stringContaining('segway_1234567890.mp3'));
+      expect(fs.promises.unlink).toHaveBeenCalledWith(expect.stringContaining('segue_1234567890.mp3'));
     });
   });
 });

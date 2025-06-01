@@ -210,26 +210,26 @@ describe('Track Manager', () => {
 
   test('should clean up segue files', () => {
     // Mock segue files
-    fs.readdirSync.mockReturnValue(['segway_123.mp3', 'segway_456.mp3', 'not_a_segway.mp3']);
+    fs.readdirSync.mockReturnValue(['segue_123.mp3', 'segue_456.mp3', 'not_a_segue.mp3']);
 
-    trackManager.cleanupSegways();
+    trackManager.cleanupSegues();
 
     expect(fs.existsSync).toHaveBeenCalledWith('/mock/data/ready/segue');
     expect(fs.readdirSync).toHaveBeenCalledWith('/mock/data/ready/segue');
-    expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segue/segway_123.mp3');
-    expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segue/segway_456.mp3');
-    expect(fs.unlinkSync).not.toHaveBeenCalledWith('/mock/data/ready/segue/not_a_segway.mp3');
+    expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segue/segue_123.mp3');
+    expect(fs.unlinkSync).toHaveBeenCalledWith('/mock/data/ready/segue/segue_456.mp3');
+    expect(fs.unlinkSync).not.toHaveBeenCalledWith('/mock/data/ready/segue/not_a_segue.mp3');
     expect(mockConsoleLog).toHaveBeenCalledWith(expect.stringContaining('Cleaned up 2 segue files'));
   });
 
   test('should handle errors when cleaning up segue files', () => {
     // Mock segue files
-    fs.readdirSync.mockReturnValue(['segway_123.mp3']);
+    fs.readdirSync.mockReturnValue(['segue_123.mp3']);
     fs.unlinkSync.mockImplementation(() => {
       throw new Error('Unlink error');
     });
 
-    trackManager.cleanupSegways();
+    trackManager.cleanupSegues();
 
     expect(mockConsoleError).toHaveBeenCalledWith(
       expect.stringContaining('Error deleting segue file'),
@@ -240,7 +240,7 @@ describe('Track Manager', () => {
   test('should handle non-existent segue directory', () => {
     fs.existsSync.mockReturnValue(false);
 
-    trackManager.cleanupSegways();
+    trackManager.cleanupSegues();
 
     expect(fs.readdirSync).not.toHaveBeenCalled();
     expect(fs.unlinkSync).not.toHaveBeenCalled();

@@ -4,7 +4,7 @@
  */
 
 const ContentQueueManager = require('../../src/managers/contentQueueManager');
-const segwayManager = require('../../src/managers/segwayManager');
+const segwayManager = require('../../src/managers/segueManager');
 const fs = require('fs');
 const path = require('path');
 
@@ -79,16 +79,16 @@ const mockTrackManager = {
 
 describe('Segue Integration Tests', () => {
   let contentQueueManager;
-  
+
   beforeEach(() => {
     jest.clearAllMocks();
-    
+
     // Initialize ContentQueueManager with mocked dependencies
     contentQueueManager = new ContentQueueManager({
       trackManager: mockTrackManager,
       pattern: ['music', 'music', 'ad', 'music']
     });
-    
+
     // Mock lastPlayedItem
     contentQueueManager.lastPlayedItem = {
       type: 'music',
@@ -100,37 +100,37 @@ describe('Segue Integration Tests', () => {
       }
     };
   });
-  
+
   // Test ID: INT-01
   test('ContentQueueManager should call SegueManager methods during prepareNextContent', async () => {
     // Initialize the queue
     await contentQueueManager.initialize();
-    
+
     // Add a new item to trigger segue generation
     await contentQueueManager.prepareNextContent();
-    
+
     // Verify SegueManager methods were called
     expect(segwayManager.shouldGenerateSegway).toHaveBeenCalled();
     expect(segwayManager.generateSegway).toHaveBeenCalled();
     expect(segwayManager.prepareSegway).toHaveBeenCalled();
-    
+
     // Verify the segue was attached to the queue item
     const queueItems = contentQueueManager.getItems();
     expect(queueItems.some(item => item.segue)).toBe(true);
   });
-  
+
   // Test ID: INT-01 (variation)
   test('ContentQueueManager should pass correct parameters to SegueManager', async () => {
     // Initialize the queue
     await contentQueueManager.initialize();
-    
+
     // Reset mocks to track new calls
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
-    
+
     // Add a new item to trigger segue generation
     await contentQueueManager.prepareNextContent();
-    
+
     // Verify parameters passed to generateSegway
     expect(segwayManager.generateSegway).toHaveBeenCalledWith(
       expect.objectContaining({ type: expect.any(String), title: expect.any(String) }), // prevMeta
@@ -138,7 +138,7 @@ describe('Segue Integration Tests', () => {
       expect.any(Array), // prevTracks
       expect.any(Array)  // nextTracks
     );
-    
+
     // Verify parameters passed to prepareSegway
     expect(segwayManager.prepareSegway).toHaveBeenCalledWith(
       'This is a mock segue text', // segwayText
@@ -146,85 +146,85 @@ describe('Segue Integration Tests', () => {
       expect.any(String)            // voiceProfile
     );
   });
-  
+
   // Test ID: INT-01 (edge case)
   test('ContentQueueManager should not generate segue when shouldGenerateSegway returns false', async () => {
     // Mock shouldGenerateSegway to return false
     segwayManager.shouldGenerateSegway.mockReturnValueOnce(false);
-    
+
     // Initialize the queue
     await contentQueueManager.initialize();
-    
+
     // Reset mocks to track new calls
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
-    
+
     // Add a new item
     await contentQueueManager.prepareNextContent();
-    
+
     // Verify generateSegway and prepareSegway were not called
     expect(segwayManager.generateSegway).not.toHaveBeenCalled();
     expect(segwayManager.prepareSegway).not.toHaveBeenCalled();
   });
-  
+
   // Test ID: INT-01 (duplicate prevention)
   test('ContentQueueManager should prevent duplicate segue generation', async () => {
     // Initialize the queue
     await contentQueueManager.initialize();
-    
+
     // Reset mocks to track new calls
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
-    
+
     // Add a new item to trigger segue generation
     await contentQueueManager.prepareNextContent();
-    
+
     // First call should generate a segue
     expect(segwayManager.generateSegway).toHaveBeenCalled();
     expect(segwayManager.prepareSegway).toHaveBeenCalled();
-    
+
     // Reset mocks again
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
-    
+
     // Try to generate a segue for the same transition again
     await contentQueueManager.generateSegwaysForQueuePosition(1, false);
-    
+
     // Second call should not generate a segue for the same transition
     expect(segwayManager.generateSegway).not.toHaveBeenCalled();
     expect(segwayManager.prepareSegway).not.toHaveBeenCalled();
   });
-  
+
   // Test ID: INT-03 (partial)
   test('ContentQueueManager should generate segues for position 2 in the queue', async () => {
     // Initialize the queue with multiple items
     await contentQueueManager.initialize();
     await contentQueueManager.replenishQueue();
-    
+
     // Reset mocks to track new calls
     segwayManager.generateSegway.mockClear();
     segwayManager.prepareSegway.mockClear();
-    
+
     // Generate segues for position 2
     await contentQueueManager.generateSegwaysForQueuePosition(1, true);
-    
+
     // Verify SegueManager methods were called
     expect(segwayManager.shouldGenerateSegway).toHaveBeenCalled();
     expect(segwayManager.generateSegway).toHaveBeenCalled();
     expect(segwayManager.prepareSegway).toHaveBeenCalled();
   });
-  
+
   // Test ID: EC-02 (no last played item)
   test('ContentQueueManager should handle no last played item gracefully', async () => {
     // Remove lastPlayedItem
     contentQueueManager.lastPlayedItem = null;
-    
+
     // Initialize the queue
     await contentQueueManager.initialize();
-    
+
     // Add a new item to trigger segue generation
     await contentQueueManager.prepareNextContent();
-    
+
     // Verify SegueManager methods were called
     expect(segwayManager.shouldGenerateSegway).toHaveBeenCalled();
     // The first parameter (prevMeta) should have a default type
