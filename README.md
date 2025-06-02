@@ -293,7 +293,7 @@ npm run test:coverage     # Generate coverage report
 ```
 
 
-### Standard Update Process
+## 📦 Standard Update Process
 
 1. **Stop the service** (if running):
    ```bash
