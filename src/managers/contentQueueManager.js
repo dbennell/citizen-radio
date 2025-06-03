@@ -22,6 +22,7 @@ class ContentQueueManager {
     this.weights = STATION_CONFIG.trackHistory?.weights || {};
     this.lastPlayedItem = null; // Track what was actually played
     this.recentSegues = new Map(); // Initialize the Map once to avoid recreating it
+    this.includePodcasts = options.includePodcasts || false; // Store the includePodcasts option
   }
 
   /**
@@ -287,7 +288,16 @@ class ContentQueueManager {
       }
 
       // Select the next track
-      const entry = await pickNextTrack(type);
+      let entry;
+
+      // If type is 'dj' and includePodcasts is enabled, use pickNextTrackWithPodcasts
+      if (type === 'dj' && this.includePodcasts) {
+        const orchestrator = require('../core/orchestrator');
+        // Use the pickNextTrackWithPodcasts function from orchestrator
+        entry = await orchestrator.pickNextTrackWithPodcasts();
+      } else {
+        entry = await pickNextTrack(type);
+      }
       if (!entry || !entry.filepath) {
         console.warn(`⚠️ No ${type} content available to queue`);
         // Return false to indicate no content was added

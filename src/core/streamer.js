@@ -390,6 +390,11 @@ function playFile(file) {
         setTimeout(() => {
           resolve();
         }, 1500); // Increased to 1500ms delay to prevent audio clipping during transitions
+      } else if (code === 255) {
+        // Code 255 typically indicates the process was terminated by a signal (e.g., during shutdown)
+        // Suppress the error message during shutdown
+        console.log(`⏹️ FFmpeg process for ${file} was terminated during shutdown (code ${code})`);
+        resolve(); // Resolve instead of reject to avoid error propagation during shutdown
       } else {
         reject(new Error(`FFmpeg playback exited with code ${code}`));
       }

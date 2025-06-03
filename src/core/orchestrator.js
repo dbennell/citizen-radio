@@ -61,15 +61,18 @@ async function playbackLoop() {
         : null;
     const startTime = Date.now();
 
-    const vid = await getPersistentVideoId();
-    if (vid) console.log('📹 Live commenting enabled:', vid);
+    let vid = null
+    if (STATION_CONFIG.streamMode !== 'local') {
+        vid = await getPersistentVideoId();
+    }
 
     console.log(chalk.green(`▶️ Starting playback: ${pattern.join(', ')}`));
     console.log(chalk.magenta(`⏱️ Uptime: ${STATION_CONFIG.uptimeHours || '∞'}h, mode: ${STATION_CONFIG.uptimeMode || 'none'}`));
 
     // Initialize content queue
     contentQueue = new ContentQueueManager({
-        pattern
+        pattern,
+        includePodcasts
     });
 
     await contentQueue.initialize();
@@ -352,5 +355,6 @@ module.exports = {
     requestStop,
     getPersistentVideoId,
     getContentQueue,
-    getPollingInfo
+    getPollingInfo,
+    pickNextTrackWithPodcasts
 };

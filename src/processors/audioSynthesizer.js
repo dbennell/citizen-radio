@@ -22,6 +22,12 @@ async function synthesizeSpeechWithVoice(part, filePath) {
         return false; // Return false to indicate no audio was synthesized
     }
 
+    // Check for empty or whitespace-only text
+    if (!text || text.trim() === '') {
+        console.log(`Skipping TTS synthesis for empty text from ${character}`);
+        return false; // Return false to indicate no audio was synthesized
+    }
+
     // Proceed with regular TTS synthesis
     let languageCode = 'en-US';
     if (voiceName && voiceName.includes('-')) {

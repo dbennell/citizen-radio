@@ -154,7 +154,7 @@ class AudioAnalysisEngine {
                 await this.saveAnalysis(file, analysis);
             }
         }
-        
+
         // Add a newline after the progress bar is complete
         console.log('\n');
 
@@ -168,6 +168,70 @@ class AudioAnalysisEngine {
 
         // Also update your central database
         await this.updateDatabase(filePath, analysis);
+
+        // Save analysis data to MP3 metadata if it's an MP3 file
+        if (filePath.toLowerCase().endsWith('.mp3')) {
+            await this.saveAnalysisToMetadata(filePath, analysis);
+        }
+    }
+
+    async saveAnalysisToMetadata(filePath, analysis) {
+        try {
+            const NodeID3 = require('node-id3');
+
+            // Read existing tags
+            const tags = NodeID3.read(filePath) || {};
+
+            // Helper function to update or add a custom frame
+            const updateCustomFrame = (description, text) => {
+                if (!tags.userDefinedText) {
+                    tags.userDefinedText = [];
+                }
+
+                const existingIndex = tags.userDefinedText.findIndex(
+                    frame => frame.description === description
+                );
+
+                if (existingIndex >= 0) {
+                    tags.userDefinedText[existingIndex].text = text;
+                } else {
+                    tags.userDefinedText.push({
+                        description: description,
+                        text: text
+                    });
+                }
+            };
+
+            // Update BPM
+            if (analysis.bpm) {
+                tags.bpm = Math.round(analysis.bpm).toString();
+                updateCustomFrame('BPM', analysis.bpm.toString());
+            }
+
+            // Update energy (using RMS energy as a proxy)
+            if (analysis.energy && analysis.energy.rmsEnergy) {
+                updateCustomFrame('ENERGY', analysis.energy.rmsEnergy.toString());
+            }
+
+            // Update mood
+            if (analysis.mood) {
+                updateCustomFrame('MOOD', analysis.mood);
+            }
+
+            // Write tags back to file
+            const success = NodeID3.update(tags, filePath);
+
+            if (success) {
+                console.log(`[Analysis] Updated metadata for "${filePath}" with BPM, energy, and mood tags`);
+                return true;
+            } else {
+                console.error(`[Analysis] Failed to update metadata for "${filePath}"`);
+                return false;
+            }
+        } catch (error) {
+            console.error(`[Analysis] Error updating metadata for "${filePath}":`, error);
+            return false;
+        }
     }
 
     findAudioFiles(directory, extensions = ['.mp3', '.wav', '.flac']) {

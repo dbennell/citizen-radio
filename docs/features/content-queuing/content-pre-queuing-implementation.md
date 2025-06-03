@@ -210,7 +210,7 @@ async function playbackLoop() {
     const startTime = Date.now();
 
     const vid = await getPersistentVideoId();
-    if (vid) console.log('📹 Live commenting enabled:', vid);
+    if (vid && !STATION_CONFIG.streamMode !== 'local') console.log('📹 Live commenting enabled:', vid);
 
     console.log(chalk.green(`▶️ Starting playback: ${pattern.join(', ')}`));
     console.log(chalk.magenta(`⏱️ Uptime: ${STATION_CONFIG.uptimeHours || '∞'}h, mode: ${STATION_CONFIG.uptimeMode || 'none'}`));

@@ -6,9 +6,10 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { TextToSpeechClient } = require('@google-cloud/text-to-speech');
-const { STATION_CONFIG } = require('../core/config');
+const { STATION_CONFIG, VOICE_MAPPING_FILE } = require('../core/config');
 const ttsClient     = new TextToSpeechClient();
-const MAPPING_FILE  = path.join(__dirname, 'voiceMapping.json');
+// Move the mapping file to the data directory
+
 
 // in-memory
 let mapping         = {};
@@ -32,9 +33,9 @@ async function init() {
     initialized = true;
 
     // load existing mapping
-    if (fs.existsSync(MAPPING_FILE)) {
+    if (fs.existsSync(VOICE_MAPPING_FILE)) {
         try {
-            mapping = JSON.parse(fs.readFileSync(MAPPING_FILE, 'utf8'));
+            mapping = JSON.parse(fs.readFileSync(VOICE_MAPPING_FILE, 'utf8'));
         } catch (_) {
             mapping = {};
         }
@@ -75,8 +76,15 @@ async function init() {
 }
 
 function saveMapping() {
-    fs.writeFileSync(MAPPING_FILE, JSON.stringify(mapping, null, 2), 'utf8');
+    // Ensure the data directory exists
+    const dataDir = path.dirname(VOICE_MAPPING_FILE);
+    if (!fs.existsSync(dataDir)) {
+        fs.mkdirSync(dataDir, { recursive: true });
+    }
+
+    fs.writeFileSync(VOICE_MAPPING_FILE, JSON.stringify(mapping, null, 2), 'utf8');
 }
+
 
 /**
  * Assigns a unique TTS voice to each participant name.

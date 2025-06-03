@@ -55,12 +55,12 @@ function loadStationConfig() {
 
 const PROJECT_ROOT = path.join(__dirname, '../..');
 const PROMPT_DIRS = {
-    ad:      path.join(PROJECT_ROOT, 'assets/prompts/ads'),
-    intro:   path.join(PROJECT_ROOT, 'assets/prompts/intros'),
-    dj:      path.join(PROJECT_ROOT, 'assets/prompts/dj'),
-    music:   path.join(PROJECT_ROOT, 'assets/prompts/music'),
-    podcast: path.join(PROJECT_ROOT, 'assets/prompts/podcast'),
-    image:   path.join(PROJECT_ROOT, 'assets/prompts/images'),
+    ad:      path.join(PROJECT_ROOT, 'data/prompts/ads'),
+    intro:   path.join(PROJECT_ROOT, 'data/prompts/intros'),
+    dj:      path.join(PROJECT_ROOT, 'data/prompts/dj'),
+    music:   path.join(PROJECT_ROOT, 'data/prompts/music'),
+    podcast: path.join(PROJECT_ROOT, 'data/prompts/podcast'),
+    image:   path.join(PROJECT_ROOT, 'data/prompts/images'),
 };
 const READY_DIR = type => path.join(PROJECT_ROOT, `data/ready/${type}`);
 
@@ -68,6 +68,7 @@ const READY_DIR = type => path.join(PROJECT_ROOT, `data/ready/${type}`);
 const PLAYED_DIR = type => path.join(PROJECT_ROOT, `data/archive/${type}`);
 const STATION_CONFIG = loadStationConfig();
 
+const VOICE_MAPPING_FILE = path.join(PROJECT_ROOT, 'data', 'voiceMapping.json');
 
 // Handle YouTube API settings from environment
 if (process.env.YOUTUBE_API_KEY && process.env.YOUTUBE_VIDEO_ID) {
@@ -167,4 +168,4 @@ if (cliStreamMode) {
 
 // -------------------------------------------------------
 
-module.exports = { PROMPT_DIRS, READY_DIR, PLAYED_DIR, STATION_CONFIG };
+module.exports = { PROMPT_DIRS, READY_DIR, PLAYED_DIR, STATION_CONFIG, VOICE_MAPPING_FILE };

@@ -25,28 +25,21 @@ const { PROMPT_DIRS, READY_DIR, STATION_CONFIG } = require("../core/config");
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const ttsClient = new textToSpeech.TextToSpeechClient();
-const TEMP_ROOT = path.join(__dirname, 'temp'); // Root directory for temp files
+const TEMP_ROOT = path.join(path.dirname(path.dirname(__dirname)), 'data/temp'); // Root directory for temp files
 
 function getTempDirectory(type, baseName = '') {
     return path.join(TEMP_ROOT, type, baseName);
 }
 
-// Create unified temp directory structure
-function createDirectories() {
-    const dirs = ['podcast', 'segue', 'dj', 'ad', 'intro', 'clips']; // Extendable
-    dirs.forEach(dir => fs.mkdirSync(path.join(TEMP_ROOT, dir), { recursive: true }));
-    const readyDirs = [...Object.keys(PROMPT_DIRS), 'segue'];
-    readyDirs.forEach(type => fs.mkdirSync(READY_DIR(type), { recursive: true }));
-}
-
-// function createDirectories() {
-//     const allTypes = [...Object.keys(PROMPT_DIRS), "segue"];
-//     allTypes.forEach(type => fs.mkdirSync(READY_DIR(type), { recursive: true }));
-//     fs.mkdirSync("ready", { recursive: true });
-// }
 
 function initPromptWatcher() {
     for (const [type, dir] of Object.entries(PROMPT_DIRS)) {
+        // Ensure the directory exists before watching it
+        if (!fs.existsSync(dir)) {
+            console.log(`📁 Creating prompt directory for ${type}: ${dir}`);
+            fs.mkdirSync(dir, { recursive: true });
+        }
+
         chokidar.watch(dir, {
             ignoreInitial: false,
             ignored: ["**/*.processed", "**/*.elaborated.txt", "**/*.cfg.json"], // Add *.cfg.json to ignored files
@@ -99,7 +92,7 @@ async function processPromptFile(type, filePath) {
     try {
         // Ensure temp and archive directories exist
         fs.mkdirSync(tempDir, { recursive: true });
-        fs.mkdirSync(archiveDir, { recursive: true }); // Optional archive directory
+        //fs.mkdirSync(archiveDir, { recursive: true }); // Optional archive directory
 
         // Move the prompt file into the temp directory
         if (!fs.existsSync(promptFileInTemp)) {
@@ -157,7 +150,7 @@ async function processPromptFile(type, filePath) {
                 try {
                     // Validate extracted participant data
                     validateParticipants(participantData, hostNames, guestNames);
-                    console.log("Validated participant data:", participantData);
+                    //console.log("Validated participant data:", participantData);
                 } catch (err) {
                     console.error("❗ Participant validation failed:", err.message);
                     return; // Abort processing if validation fails
@@ -212,9 +205,9 @@ async function processPromptFile(type, filePath) {
                 if (fs.existsSync(filePath)) fs.unlinkSync(filePath); // Optionally remove the original file
             } else {
                 // Optionally archive the processed file
-                const archivePath = path.join(archiveDir, `${baseName}.txt`);
-                fs.renameSync(promptFileInTemp, archivePath);
-                console.log(`✔ Moved processed prompt to archive: ${archivePath}`);
+                // const archivePath = path.join(archiveDir, `${baseName}.txt`);
+                // fs.renameSync(promptFileInTemp, archivePath);
+                // console.log(`✔ Moved processed prompt to archive: ${archivePath}`);
             }
         } catch (cleanupErr) {
             console.error(`❗ Failed to cleanup prompt file (${filePath}):`, cleanupErr.message);
@@ -726,4 +719,4 @@ async function generateSegway(prevMeta, nextMeta, prevTracks = [], nextTracks = 
     }
 }
 
-module.exports = { createDirectories, initPromptWatcher };
+module.exports = { initPromptWatcher };

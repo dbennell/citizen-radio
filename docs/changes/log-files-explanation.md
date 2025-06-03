@@ -15,7 +15,7 @@ This document explains the purpose of each log file in the CitizenRadio project 
 - **Format**: Line-by-line JSON objects, each representing a play event
 - **Usage**: Used for play history, analytics, and reporting
 
-### 3. -+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+### 3. feedback.log
 - **Purpose**: Temporary storage for feedback until enough entries are collected
 - **Format**: JSON array of feedback entries
 - **Usage**: Acts as a buffer to prevent frequent updates to MP3 files, which could be resource-intensive

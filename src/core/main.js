@@ -1,7 +1,7 @@
 // ========================
 // File: main.js (formerly index.js)
 // ========================
-const { createDirectories, initPromptWatcher } = require('../processors/promptProcessor');
+const { initPromptWatcher } = require('../processors/promptProcessor');
 const { playbackLoop, stopPlayback, requestStop}          = require('./orchestrator');
 const { startYouTubeStreamer, getFfmpegStdin }= require('./streamer');
 const tracksManager                           = require('../managers/trackManager');
@@ -113,7 +113,6 @@ function cleanTempDirectory(rootDir) {
     console.log(`🪳 Debug mode is ${STATION_CONFIG.debug ? 'ON' : 'OFF'}`);
     //console.log(`📡 Stream mode is set to: '${STATION_CONFIG.streamMode}'`);
     cleanTempDirectory(TEMP_ROOT);
-    createDirectories();
     initPromptWatcher();
     setupKeyListener();
 

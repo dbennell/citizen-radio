@@ -111,7 +111,7 @@ Extract the topic, and for each participant:
             temperature: 0
         });
 
-        console.log("❯ LLM raw response:", JSON.stringify(res.choices[0], null, 2));
+        //console.log("❯ LLM raw response:", JSON.stringify(res.choices[0], null, 2));
         const msg = res.choices[0].message;
 
         if (msg.function_call?.name === "extract_participants") {
@@ -304,9 +304,9 @@ function parseParticipantsManually(promptText) {
         else if (role === 'GUEST') guestNames.push(fullName);
     }
 
-    console.log('Extracted participantData (manual fallback):', participantData);
-    console.log('Hosts:', hostNames);
-    console.log('Guests:', guestNames);
+    //console.log('Extracted participantData (manual fallback):', participantData);
+    //console.log('Hosts:', hostNames);
+    //console.log('Guests:', guestNames);
 
     return {
         participantData,
